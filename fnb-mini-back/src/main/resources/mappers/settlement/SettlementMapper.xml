@@ -1,0 +1,153 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.cj.fnbmini.settlement.SettlementMapper">
+
+    <!-- ===== 매장 ===== -->
+
+    <select id="selectShopList" resultType="com.cj.fnbmini.settlement.entity.Shop">
+        SELECT id, shop_code, shop_name, use_yn, created_at
+        FROM shop
+        WHERE use_yn = 'Y'
+        ORDER BY shop_code
+    </select>
+
+    <!-- ===== 일매출 ===== -->
+
+    <select id="selectDailySalesList" parameterType="com.cj.fnbmini.settlement.dto.SettlementSearchDto"
+            resultType="com.cj.fnbmini.settlement.entity.DailySales">
+        SELECT ds.*, s.shop_code, s.shop_name
+        FROM daily_sales ds
+        JOIN shop s ON s.id = ds.shop_id
+        <where>
+            <if test="shopId != null">AND ds.shop_id = #{shopId}</if>
+            <if test="salesDateFrom != null and salesDateFrom != ''">
+                AND ds.sales_date &gt;= #{salesDateFrom}::date
+            </if>
+            <if test="salesDateTo != null and salesDateTo != ''">
+                AND ds.sales_date &lt;= #{salesDateTo}::date
+            </if>
+        </where>
+        ORDER BY ds.sales_date DESC, s.shop_code
+    </select>
+
+    <!--
+        ★ 비관적 락 (SELECT FOR UPDATE)
+        같은 매장/날짜를 동시에 정산하려는 다른 TX는 여기서 대기.
+        브랜드 관리의 낙관적 락(version WHERE)과 다른 점:
+        - 낙관적: 충돌 시 "실패 → 재시도" (사용자가 다시 시도)
+        - 비관적: 충돌 자체를 방지 (먼저 온 TX가 끝날 때까지 대기)
+        금전 데이터라 "일단 막고 순서대로"가 맞음.
+    -->
+    <select id="selectDailySalesForUpdate" resultType="com.cj.fnbmini.settlement.entity.DailySales">
+        SELECT ds.*, s.shop_code, s.shop_name
+        FROM daily_sales ds
+        JOIN shop s ON s.id = ds.shop_id
+        WHERE ds.shop_id = #{shopId}
+          AND ds.sales_date = #{salesDate}
+        FOR UPDATE
+    </select>
+
+    <!-- ===== 정산 ===== -->
+
+    <select id="selectSettlementList" parameterType="com.cj.fnbmini.settlement.dto.SettlementSearchDto"
+            resultType="com.cj.fnbmini.settlement.entity.Settlement">
+        SELECT st.*, s.shop_code, s.shop_name
+        FROM settlement st
+        JOIN shop s ON s.id = st.shop_id
+        <where>
+            <if test="shopId != null">AND st.shop_id = #{shopId}</if>
+            <if test="salesDateFrom != null and salesDateFrom != ''">
+                AND st.sales_date &gt;= #{salesDateFrom}::date
+            </if>
+            <if test="salesDateTo != null and salesDateTo != ''">
+                AND st.sales_date &lt;= #{salesDateTo}::date
+            </if>
+            <if test="status != null and status != ''">AND st.status = #{status}</if>
+        </where>
+        ORDER BY st.sales_date DESC, s.shop_code
+    </select>
+
+    <select id="selectSettlementById" resultType="com.cj.fnbmini.settlement.entity.Settlement">
+        SELECT st.*, s.shop_code, s.shop_name
+        FROM settlement st
+        JOIN shop s ON s.id = st.shop_id
+        WHERE st.id = #{id}
+    </select>
+
+    <!--
+        ★ 멱등성 키 체크
+        프론트에서 UUID를 보내고, 서버는 이 키로 중복 여부 판단.
+        이미 있으면 기존 결과를 반환 → 이중 정산 방지.
+    -->
+    <select id="selectByIdempotencyKey" resultType="com.cj.fnbmini.settlement.entity.Settlement">
+        SELECT st.*, s.shop_code, s.shop_name
+        FROM settlement st
+        JOIN shop s ON s.id = st.shop_id
+        WHERE st.idempotency_key = #{idempotencyKey}
+    </select>
+
+    <insert id="insertSettlement" parameterType="com.cj.fnbmini.settlement.entity.Settlement"
+            useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO settlement (shop_id, sales_date, total_amt, status, idempotency_key,
+                                sap_sync_status, settled_by)
+        VALUES (#{shopId}, #{salesDate}, #{totalAmt}, #{status}, #{idempotencyKey},
+                'PENDING', #{settledBy})
+    </insert>
+
+    <update id="updateSettlementStatus">
+        UPDATE settlement
+        SET status = #{status},
+            sap_sync_status = #{sapSyncStatus},
+            sap_sync_error = #{sapSyncError},
+            settled_at = CASE WHEN #{status} = 'SETTLED' THEN NOW() ELSE settled_at END,
+            version = version + 1
+        WHERE id = #{id}
+    </update>
+
+    <update id="updateSettlementWithVersion" parameterType="com.cj.fnbmini.settlement.entity.Settlement">
+        UPDATE settlement
+        SET status = #{status},
+            sap_sync_status = #{sapSyncStatus},
+            sap_sync_error = #{sapSyncError},
+            settled_at = CASE WHEN #{status} = 'SETTLED' THEN NOW() ELSE settled_at END,
+            version = version + 1
+        WHERE id = #{id}
+          AND version = #{version}
+    </update>
+
+    <!-- ===== 원장 ===== -->
+
+    <update id="markLedgerAsDeleted">
+        UPDATE settlement_ledger
+        SET del_yn = 'Y'
+        WHERE settlement_id = #{settlementId}
+          AND del_yn = 'N'
+    </update>
+
+    <insert id="insertSettlementLedger" parameterType="com.cj.fnbmini.settlement.entity.SettlementLedger"
+            useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO settlement_ledger (settlement_id, shop_id, sales_date, ledger_type,
+                                       cash_amt, card_amt, easy_amt, total_amt)
+        VALUES (#{settlementId}, #{shopId}, #{salesDate}, #{ledgerType},
+                #{cashAmt}, #{cardAmt}, #{easyAmt}, #{totalAmt})
+    </insert>
+
+    <!-- ===== 이력 ===== -->
+
+    <insert id="insertSettlementSyncHistory" parameterType="com.cj.fnbmini.settlement.entity.SettlementSyncHistory">
+        INSERT INTO settlement_sync_history (settlement_id, sync_type, sync_status,
+                                             request_payload, response_payload, error_message)
+        VALUES (#{settlementId}, #{syncType}, #{syncStatus},
+                #{requestPayload}, #{responsePayload}, #{errorMessage})
+    </insert>
+
+    <select id="selectFailedSettlements" resultType="com.cj.fnbmini.settlement.entity.Settlement">
+        SELECT st.*, s.shop_code, s.shop_name
+        FROM settlement st
+        JOIN shop s ON s.id = st.shop_id
+        WHERE st.sap_sync_status = 'FAILED'
+        ORDER BY st.created_at
+    </select>
+
+</mapper>

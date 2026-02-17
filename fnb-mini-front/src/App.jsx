@@ -6,6 +6,7 @@ import LoginPage from '@/pages/login/LoginPage'
 import SignupPage from '@/pages/signup/SignupPage'
 import BrandPage from '@/pages/brand/BrandPage'
 import SyncHistoryPage from '@/pages/sync-history/SyncHistoryPage'
+import SettlementPage from '@/pages/settlement/SettlementPage'
 
 /**
  * 실무: router/index.js → createBrowserRouter
@@ -28,6 +29,7 @@ export default function App() {
             <Route element={<Layout />}>
               <Route path="/brand" element={<BrandPage />} />
               <Route path="/sync-history" element={<SyncHistoryPage />} />
+              <Route path="/settlement" element={<SettlementPage />} />
             </Route>
           </Route>
           <Route path="*" element={<Navigate to="/brand" replace />} />

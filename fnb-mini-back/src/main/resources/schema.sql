@@ -49,3 +49,95 @@ CREATE TABLE IF NOT EXISTS brand_sync_history (
     created_at      TIMESTAMP    NOT NULL DEFAULT NOW(),
     completed_at    TIMESTAMP
 );
+
+-- ============================================================
+-- 정산 시스템
+-- ============================================================
+
+-- 매장 마스터
+CREATE TABLE IF NOT EXISTS shop (
+    id          BIGSERIAL PRIMARY KEY,
+    shop_code   VARCHAR(20)  NOT NULL UNIQUE,
+    shop_name   VARCHAR(100) NOT NULL,
+    use_yn      VARCHAR(1)   DEFAULT 'Y',
+    created_at  TIMESTAMP    DEFAULT NOW()
+);
+
+-- 매장 초기 데이터
+INSERT INTO shop (shop_code, shop_name) VALUES
+    ('SHOP001', '강남점'),
+    ('SHOP002', '홍대점'),
+    ('SHOP003', '판교점')
+ON CONFLICT (shop_code) DO NOTHING;
+
+-- 일매출 (POS에서 올라온 원본 데이터)
+CREATE TABLE IF NOT EXISTS daily_sales (
+    id          BIGSERIAL PRIMARY KEY,
+    shop_id     BIGINT       NOT NULL REFERENCES shop(id),
+    sales_date  DATE         NOT NULL,
+    cash_amt    BIGINT       DEFAULT 0,
+    card_amt    BIGINT       DEFAULT 0,
+    easy_amt    BIGINT       DEFAULT 0,
+    total_amt   BIGINT       DEFAULT 0,
+    created_at  TIMESTAMP    DEFAULT NOW(),
+    UNIQUE(shop_id, sales_date)
+);
+
+-- 일매출 샘플 데이터
+INSERT INTO daily_sales (shop_id, sales_date, cash_amt, card_amt, easy_amt, total_amt) VALUES
+    (1, CURRENT_DATE - 3, 150000, 350000, 100000, 600000),
+    (1, CURRENT_DATE - 2, 120000, 400000, 80000,  600000),
+    (1, CURRENT_DATE - 1, 180000, 320000, 120000, 620000),
+    (2, CURRENT_DATE - 3, 200000, 500000, 150000, 850000),
+    (2, CURRENT_DATE - 2, 170000, 450000, 130000, 750000),
+    (2, CURRENT_DATE - 1, 220000, 480000, 160000, 860000),
+    (3, CURRENT_DATE - 3, 100000, 250000, 80000,  430000),
+    (3, CURRENT_DATE - 2, 90000,  280000, 70000,  440000),
+    (3, CURRENT_DATE - 1, 110000, 300000, 90000,  500000)
+ON CONFLICT (shop_id, sales_date) DO NOTHING;
+
+-- 정산 확정 (실무: SA_CLOSE_DAILY_SALES_M)
+CREATE TABLE IF NOT EXISTS settlement (
+    id               BIGSERIAL PRIMARY KEY,
+    shop_id          BIGINT      NOT NULL REFERENCES shop(id),
+    sales_date       DATE        NOT NULL,
+    total_amt        BIGINT      DEFAULT 0,
+    status           VARCHAR(20) DEFAULT 'READY',
+                     -- READY / PROCESSING / SETTLED / FAILED
+    version          INT         DEFAULT 0,
+    idempotency_key  VARCHAR(64) UNIQUE,
+    sap_sync_status  VARCHAR(20) DEFAULT 'NONE',
+                     -- NONE / PENDING / SUCCESS / FAILED
+    sap_sync_error   VARCHAR(500),
+    settled_at       TIMESTAMP,
+    settled_by       VARCHAR(50),
+    created_at       TIMESTAMP   DEFAULT NOW(),
+    UNIQUE(shop_id, sales_date)
+);
+
+-- 정산 원장 (실무: TFMCL006)
+CREATE TABLE IF NOT EXISTS settlement_ledger (
+    id              BIGSERIAL PRIMARY KEY,
+    settlement_id   BIGINT      NOT NULL REFERENCES settlement(id),
+    shop_id         BIGINT      NOT NULL REFERENCES shop(id),
+    sales_date      DATE        NOT NULL,
+    ledger_type     VARCHAR(10) NOT NULL,  -- NORMAL / REVERSE
+    cash_amt        BIGINT      DEFAULT 0,
+    card_amt        BIGINT      DEFAULT 0,
+    easy_amt        BIGINT      DEFAULT 0,
+    total_amt       BIGINT      DEFAULT 0,
+    del_yn          VARCHAR(1)  DEFAULT 'N',
+    created_at      TIMESTAMP   DEFAULT NOW()
+);
+
+-- 정산 동기화 이력
+CREATE TABLE IF NOT EXISTS settlement_sync_history (
+    id                BIGSERIAL PRIMARY KEY,
+    settlement_id     BIGINT      NOT NULL REFERENCES settlement(id),
+    sync_type         VARCHAR(20),   -- SETTLE / REVERSE / CANCEL
+    sync_status       VARCHAR(20),   -- SUCCESS / FAILED
+    request_payload   TEXT,
+    response_payload  TEXT,
+    error_message     VARCHAR(500),
+    created_at        TIMESTAMP   DEFAULT NOW()
+);

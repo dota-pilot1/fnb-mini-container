@@ -15,6 +15,7 @@ import '@/assets/style/header.scss'
 const menus = [
   { path: '/brand', name: '브랜드 관리' },
   { path: '/sync-history', name: '동기화 이력' },
+  { path: '/settlement', name: '매출 정산' },
 ]
 
 export default function Header() {
