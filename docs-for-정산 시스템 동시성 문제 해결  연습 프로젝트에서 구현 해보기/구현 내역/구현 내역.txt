@@ -1,0 +1,274 @@
+============================================================
+정산 시스템 구현 내역
+============================================================
+
+실무 프로젝트(PosSalesRegService)의 정산 로직을 참고하여,
+동시성 문제 해결을 위한 총 9개 조치를 적용한 연습용 구현.
+
+
+============================================================
+1. 전체 구조 요약
+============================================================
+
+[프론트]                    [백엔드]                    [외부API]
+SettlementPage.jsx    →    SettlementController     →  (NestJS SAP 시뮬레이터)
+ - 검색 폼                  - SettlementService          - POST /reverse
+ - 일매출 그리드             - SettlementSyncService      - POST /normal
+ - 정산 내역 그리드          - SettlementMapper.xml        - POST /cancel
+ - 멱등키(UUID) 생성
+
+
+============================================================
+2. 적용된 동시성 조치 (총 9개)
+============================================================
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+조치 1: 트랜잭션 3분할 (커넥션 풀 고갈 방지)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+■ 왜 필요한가?
+  정산 실행 시 외부 API(SAP)를 호출하는데 2~4초 걸린다.
+  이 동안 DB 커넥션을 계속 잡고 있으면
+  동시 요청이 몰릴 때 커넥션 풀이 고갈된다.
+
+■ 구현 위치
+  SettlementService.settle() — 이 메서드에는 @Transactional이 없다!
+
+■ 동작 흐름
+  1차 TX: self.createSettlement()   → 비관적 락 + 정산/원장 생성 → 커밋 → 커넥션 반환
+  2차 NO TX: syncToExternalApi()    → 외부 API 호출 (2~4초) → 커넥션 점유 안 함
+  3차 TX: self.updateSyncResults()  → 결과 반영 + 이력 저장 → 커밋 → 커넥션 반환
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+조치 2: Self-Proxy 패턴
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+■ 왜 필요한가?
+  settle()에서 같은 클래스의 createSettlement()를 호출할 때
+  this.createSettlement()로 호출하면 @Transactional이 동작하지 않는다.
+  (Spring AOP 프록시를 거치지 않기 때문)
+
+■ 구현 위치
+  @Lazy @Autowired private SettlementService self;
+  → self.createSettlement(), self.updateSyncResults() 호출
+
+■ 핵심
+  self = Spring 프록시 객체 → @Transactional이 실제로 동작
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+조치 3: 비관적 락 (SELECT FOR UPDATE)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+■ 왜 필요한가?
+  같은 매장/날짜에 대해 두 사람이 동시에 "정산 실행" 버튼을 누르면
+  정산이 이중으로 생성될 수 있다.
+  금전 데이터이므로 충돌 자체를 방지해야 한다.
+
+■ 구현 위치
+  - SettlementMapper.xml: selectDailySalesForUpdate
+    → SELECT ... FROM daily_sales WHERE shop_id=? AND sales_date=? FOR UPDATE
+  - SettlementService.createSettlement() 내부에서 호출
+
+■ 동작 흐름
+  TX-A가 FOR UPDATE로 행 잠금 → TX-B가 같은 행에 접근하면 TX-A 끝날 때까지 대기
+  → TX-A 커밋 후 TX-B 진행 (이중 정산 방지)
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+조치 4: 멱등성 키 (Idempotency Key)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+■ 왜 필요한가?
+  사용자가 버튼을 빠르게 두 번 클릭하거나 네트워크 재시도가 발생하면
+  같은 정산 요청이 두 번 서버에 도달할 수 있다.
+  비관적 락은 "동시" 요청만 막지, "순차적 중복" 요청은 못 막음.
+
+■ 구현 위치
+  - 프론트(SettlementPage.jsx:68):
+    const idempotencyKey = crypto.randomUUID()
+    → 정산 실행 버튼 클릭마다 새 UUID 생성해서 서버로 전송
+
+  - 백엔드(SettlementService.settle()):
+    Settlement existing = settlementMapper.selectByIdempotencyKey(idempotencyKey);
+    if (existing != null) return existing;  // 이미 처리됨 → 기존 결과 반환
+
+  - DB: settlement 테이블의 idempotency_key 컬럼 (UNIQUE 제약)
+
+■ 동작 흐름
+  1. 프론트: UUID 생성 → 서버로 전송
+  2. 서버: DB에서 해당 키 검색
+  3. 이미 있으면 → 기존 결과 반환 (처리 안 함)
+  4. 없으면 → 정상 처리 + 키 저장
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+조치 5: 보상 트랜잭션 (Compensating Transaction)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+■ 왜 필요한가?
+  외부 API(SAP)에 역분개 전표와 신규 전표를 순서대로 보내는데,
+  역분개는 성공했지만 신규 전표가 실패하면
+  SAP에 역분개만 남아서 데이터 불일치가 생긴다.
+
+■ 구현 위치
+  - SettlementService.settle() 내부:
+    if (reverseSuccess && hasNormalFail) {
+        settlementSyncService.cancelReverse(settlement);  // 역분개 취소
+    }
+
+  - SettlementSyncService.cancelReverse():
+    POST /api/settlements/cancel 호출
+
+  - 외부API(NestJS): cancel은 항상 성공 (보상은 실패하면 안 됨)
+
+■ 동작 흐름
+  1. 역분개 전표 전송 → 성공
+  2. 신규 전표 전송 → 실패!
+  3. 보상: 역분개 취소 요청 → 항상 성공
+  4. 결과: FAILED로 기록 (SAP에 잘못된 데이터 남지 않음)
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+조치 6: 외부 API 에러 핸들링
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+■ 왜 필요한가?
+  외부 API 호출 시 에러를 throw하면
+  catch에서 잡히고 이력 테이블에 기록이 안 남는다.
+  에러도 "결과"로 기록해야 추후 분석/재시도가 가능.
+
+■ 구현 위치
+  SettlementSyncService.callApi()에서:
+  - 성공: result.setSuccess(true)
+  - 실패: result.setSuccess(false) + result.setErrorMessage(...)
+  → 에러를 throw하지 않고 result 객체에 담아 반환
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+조치 7: 이력 테이블
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+■ 왜 필요한가?
+  외부 API 호출 결과(성공/실패, 요청/응답 본문)를 DB에 기록해야
+  문제 발생 시 원인 분석, 재시도 판단이 가능.
+
+■ 구현 위치
+  settlement_sync_history 테이블에 모든 API 호출 결과 기록
+  (syncType, syncStatus, requestPayload, responsePayload, errorMessage)
+
+  SettlementService.updateSyncResults()에서 INSERT
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+조치 8: 상태 추적
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+■ 왜 필요한가?
+  정산이 어디까지 진행됐는지 추적해야
+  실패 시 어디서 실패했는지, 재시도 대상인지 판단 가능.
+
+■ 구현 위치
+  settlement 테이블:
+  - status:          READY → PROCESSING → SETTLED / FAILED
+  - sap_sync_status: NONE → PENDING → SUCCESS / FAILED
+  - sap_sync_error:  실패 시 에러 메시지 저장
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+조치 9: 수동 재시도
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+■ 왜 필요한가?
+  외부 API가 일시적으로 장애일 때 FAILED 상태가 된 정산을
+  수동으로 다시 시도할 수 있어야 한다.
+
+■ 구현 위치
+  - SettlementController: POST /api/settlements/{id}/retry
+  - SettlementService.retrySettlement():
+    FAILED 상태 확인 → 외부 API 재호출 → 결과 반영
+  - 프론트: SettlementGrid의 "재시도" 버튼
+
+
+============================================================
+4. 파일 목록
+============================================================
+
+백엔드 (fnb-mini-back)
+──────────────────────
+schema.sql                       - 테이블 5개 + 샘플 데이터
+settlement/entity/
+  Shop.java                      - 매장 엔티티
+  DailySales.java                - 일매출 엔티티
+  Settlement.java                - 정산 엔티티
+  SettlementLedger.java          - 정산 원장 엔티티
+  SettlementSyncHistory.java     - 동기화 이력 엔티티
+settlement/dto/
+  SettlementSearchDto.java       - 검색 조건 DTO
+  SettlementReqDto.java          - 정산 요청 DTO (멱등키 포함)
+  SettlementSyncResultDto.java   - 동기화 결과 DTO
+settlement/
+  SettlementMapper.java          - MyBatis Mapper 인터페이스
+  SettlementMapper.xml           - SQL (FOR UPDATE, 멱등키 체크 포함)
+  SettlementService.java         - 비즈니스 로직 (오케스트레이터)
+  SettlementSyncService.java     - 외부 API 호출 (TX 없음)
+  SettlementController.java      - REST 엔드포인트
+
+외부 API (fnb-external-api — NestJS)
+─────────────────────────────────────
+settlement/settlement.controller.ts  - SAP 시뮬레이터 (2~4초 지연, 10% 실패)
+settlement/settlement.module.ts      - 모듈 등록
+
+프론트 (fnb-mini-front)
+───────────────────────
+api/settlement/settlement-fetch.js      - API 호출 함수
+components/settlement/
+  SettlementSearchForm.jsx              - 검색 폼 (매장/기간/상태)
+  DailySalesGrid.jsx                    - 일매출 그리드
+  SettlementGrid.jsx                    - 정산 내역 그리드
+pages/settlement/SettlementPage.jsx     - 메인 페이지 (좌/우 레이아웃)
+components/common/layout/Header.jsx     - 헤더 메뉴에 '매출 정산' 추가
+App.jsx                                 - /settlement 라우트 추가
+
+
+============================================================
+5. API 엔드포인트
+============================================================
+
+백엔드 → 프론트용
+  GET  /api/settlements/shops        매장 목록
+  GET  /api/settlements/daily-sales  일매출 조회
+  GET  /api/settlements              정산 내역 조회
+  POST /api/settlements/settle       정산 실행 (핵심)
+  POST /api/settlements/{id}/retry   재시도
+
+백엔드 → 외부API(SAP 시뮬레이터)
+  POST /api/settlements/reverse      역분개 전표 전송
+  POST /api/settlements/normal       신규 전표 전송
+  POST /api/settlements/cancel       보상 취소 요청
+
+
+============================================================
+6. DB 테이블
+============================================================
+
+shop                     매장 마스터 (3개 샘플: 강남/홍대/판교)
+daily_sales              일매출 원본 (POS에서 올라온 데이터, 9건 샘플)
+settlement               정산 확정 (멱등키 UNIQUE, version 낙관적 락)
+settlement_ledger        정산 원장 (NORMAL/REVERSE 분리)
+settlement_sync_history  동기화 이력 (SAP 호출 기록)
+
+
+============================================================
+7. 실무 프로젝트와의 매핑
+============================================================
+
+실무                          →  미니 프로젝트
+──────────────────────────────────────────────────────
+POS 트랜잭션 데이터           →  daily_sales 테이블
+SA_CLOSE_DAILY_SALES_M       →  settlement 테이블
+TFMCL006 (전표 원장)          →  settlement_ledger 테이블
+SAP (회계 시스템)             →  fnb-external-api (NestJS)
+PosSalesRegService (6단계 TX) →  SettlementService (TX 3분할)
+문제: 하나의 @Transactional    →  해결: TX 없는 오케스트레이터
