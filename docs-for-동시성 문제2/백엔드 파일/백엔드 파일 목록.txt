@@ -1,0 +1,50 @@
+================================================================
+정산/결제 영역 — 백엔드 실제 파일 목록
+================================================================
+
+■ 정산-PosSalesReg (POS 매출등록 정산) ← 가장 복잡
+
+  PosSalesRegController.java   : POST /api/closing/closingmng/v1.0/...
+  PosSalesRegService.java      : 6단계 트랜잭션 + SAP 연동
+  PosSalesRegMapper.xml        : INSERT/DELETE 정산 SQL (1940줄)
+
+  동시성 위험: 6단계 TX에 락 없음, SAP 호출이 TX 안에 있음
+
+
+■ 카드정산-CrdtCardAck (신용카드 정산)
+
+  CrdtCardAckGdohRegService.java : self 주입 패턴 사용, Check-Then-Act
+  CrdtCardAckGdohRegMapper.xml   : 카드 정산 조회/등록 SQL
+
+  동시성 위험: 조회-삽입 사이에 락 없음 (중복 정산 가능)
+
+
+■ 시재정산-GdohRegCnclAprv (시재 정산 승인/취소)
+
+  GdohRegCnclAprvService.java : 상태 기반 분기 + SAP 조건부 호출
+  GdohRegCnclAprvMapper.xml   : 승인/취소 UPDATE SQL
+
+  동시성 위험: 상태 확인 시 락 없음
+
+
+■ 수기매출-MnulCustSalesReg (수기매출 등록)
+
+  MnulCustSalesRegService.java : self 주입 + 저장 프로시저 호출
+  MnulCustSalesRegMapper.xml   : CALLABLE (PK_IF_MGNT_I_SP_...) + 루프 UPDATE
+
+  동시성 위험: 루프 개별 UPDATE (배치 미사용)
+
+
+■ SAP연동 (외부 시스템 인터페이스)
+
+  Com0280Service.java                            : SAP 연동 서비스 래퍼
+  SI_COM0280_FS_ClientSynchronousModule.java     : SOAP 동기 호출 (5분 타임아웃)
+
+  동시성 위험: 재시도/서킷브레이커/멱등성 전부 없음
+
+
+■ POS어댑터 (POS 개점/마감)
+
+  AdapterService.java : POS 상태 관리 (개점/마감)
+
+  동시성 위험: Check-Then-Act (상태 확인 후 업데이트 사이에 락 없음)

@@ -1,0 +1,99 @@
+================================================================
+헤더 메뉴, 왼쪽 메뉴 로직 개요
+================================================================
+
+■ 전체 흐름
+
+  로그인 → userInfo API 호출 → menuList 수신
+  → localStorage에 저장 → App.jsx에서 Recoil에 세팅
+  → Header(상단 GNB) + LeftMenu(좌측 사이드바) + MdiTab(탭) 렌더링
+
+
+■ 메뉴 데이터 흐름
+
+  1. Auth.jsx에서 로그인 성공 후 POST /api/userInfo/v1.0 호출
+  2. 서버가 사용자 권한에 맞는 menuList (계층 구조) 반환
+  3. localStorage.setItem('sessionMenuList', JSON.stringify(menuList))
+  4. App.jsx가 localStorage에서 읽어서 Recoil fwMenuState에 세팅
+  5. Header, LeftMenu, MdiTab이 Recoil 상태를 구독해서 렌더링
+
+
+■ 메뉴 계층 구조 (3단계)
+
+  progLvl 3 → 최상위 메뉴 (Header GNB에 표시)
+    progLvl 4 → 중간 메뉴 (LeftMenu 1depth)
+      progLvl 5 → 말단 메뉴 (LeftMenu 2depth, 실제 페이지 연결)
+
+  예시:
+  Level 3: "메뉴 관리"
+  ├─ Level 4: "기본 메뉴"
+  │  ├─ Level 5: "메뉴 마스터" → pages/menu/.../MenuMaster
+  │  └─ Level 5: "세트 옵션"  → pages/menu/.../SetOption
+  └─ Level 4: "특수 메뉴"
+     └─ Level 5: "위생 관리"  → pages/menu/.../HygieneMng
+
+
+■ 화면 구성
+
+  ┌──────────────────────────────────────────────────┐
+  │  Header (GNB)                                    │
+  │  [FS통합결제] [FS메뉴] [브랜드관리] ...   사용자명│
+  ├───────┬──────────────────────────────────────────┤
+  │       │  MdiTab (열린 페이지 탭)                  │
+  │ Left  │  [메뉴마스터] [세트옵션] [× 닫기]         │
+  │ Menu  ├──────────────────────────────────────────┤
+  │       │                                          │
+  │ 기본  │  Content (Outlet)                        │
+  │ 메뉴  │  → 현재 활성 탭의 페이지 컴포넌트         │
+  │ ─세트 │                                          │
+  │  옵션 │                                          │
+  │       │                                          │
+  └───────┴──────────────────────────────────────────┘
+
+
+■ 핵심 동작
+
+  1. Header 메뉴 클릭 (Level 3)
+     → handleActive(id) → fwLeftMenuState 업데이트
+     → LeftMenu가 해당 하위 메뉴(Level 4, 5) 표시
+
+  2. LeftMenu 항목 클릭 (Level 5)
+     → handleAddTab(id) → tabStore에 탭 추가 (최대 12개)
+     → 해당 페이지 컴포넌트를 lazy loading으로 렌더링
+
+  3. MdiTab 탭 클릭
+     → handleChangeTab(index) → currentTabIndexStore 변경
+     → 해당 탭의 페이지로 전환
+
+  4. MdiTab 탭 닫기
+     → handleCloseTab(index) → tabStore에서 제거
+
+
+■ 컴포넌트 매핑 (페이지 연결)
+
+  MenuDto의 componentName 필드에 페이지 경로 저장
+  예: 'pages/cps/base/brandmng/BrandRtrv'
+
+  App.jsx에서 lazy loading으로 동적 import:
+  → import(`./pages/cps/base/brandmng/BrandRtrv.jsx`)
+  → 탭에 해당 컴포넌트 렌더링
+
+
+■ 권한 필터링
+
+  서버에서 menuList 반환 시 사용자 권한 기반 필터링:
+  - frameone_auth_user → frameone_authority → frameone_auth_prog_fsmns
+  - use_yn = '1', menu_yn = '1' 인 메뉴만 포함
+  - system_cl = 'FSBO' (FS백오피스 시스템)
+  - lang_cl = 'ko' (한국어)
+
+
+■ Recoil 상태 (menu-atom.js, tabs-atom.js)
+
+  fwMenuState          → 최상위 메뉴 배열 (Header용)
+  fwLeftMenuState      → 현재 좌측 서브메뉴 구조
+  fwLeftMenuOpenAtom   → 사이드바 열림/닫힘
+  fwLeftMenuNameAtom   → 현재 메뉴 이름 표시
+  tabStore             → 열린 탭 배열 (최대 12개)
+  currentTabIndexStore → 현재 활성 탭 인덱스
+  topLevelstore        → 현재 최상위 메뉴 ID

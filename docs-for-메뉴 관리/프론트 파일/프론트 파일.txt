@@ -1,0 +1,119 @@
+================================================================
+메뉴 관리 — 프론트엔드 파일 정리
+================================================================
+
+경로 기준: cjfw-fscps-bo-front/cjfw-fscps-bo-front/src/
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+1. 레이아웃 컴포넌트
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+■ components/common/layout/Header.jsx
+  - 상단 GNB (Global Navigation Bar)
+  - fwMenuState에서 최상위 메뉴(Level 3) 읽어서 렌더링
+  - 메뉴 클릭 → handleActive(id) → 좌측 메뉴 업데이트
+  - 사용자명 표시, 환경 정보(FS통합결제/FS메뉴) 표시
+  - 운영/QA 환경에서는 예제 메뉴 필터링
+
+■ components/common/layout/LeftMenu.jsx
+  - 좌측 사이드바 (서브메뉴)
+  - 선택된 최상위 메뉴의 하위 항목(Level 4, 5) 표시
+  - 접기/펼치기 토글 버튼
+  - Level 4: 카테고리 (접기/펼치기 가능)
+  - Level 5: 실제 메뉴 항목 (클릭 → 탭 추가 + 페이지 이동)
+  - handleActiveLeftMenu(id) → handleAddTab(id)
+
+■ components/common/layout/MdiTab.jsx
+  - 열린 페이지 탭 바 (Multi-Document Interface)
+  - tabStore에서 탭 배열 읽어서 렌더링
+  - 탭 클릭 → handleChangeTab(index)
+  - 탭 닫기 → handleCloseTab(index)
+  - 홈 버튼, 이전/다음, 전체보기, 전체닫기
+  - 최대 12개 탭 제한
+
+■ components/common/layout/ContentsPage.jsx
+  - 전체 레이아웃 조합
+  - Header + MdiTab + section(LeftMenu + contents)
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+2. 핵심 훅
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+■ hooks/common/use-fw-tab.js
+  - 메뉴/탭 관련 모든 동작을 관리하는 핵심 훅
+  - handleActive(id)         → Header 메뉴 클릭 처리
+  - handleActiveLeftMenu(id) → LeftMenu 항목 클릭 처리
+  - handleAddTab(id)         → 탭 추가 (최대 12개)
+  - handleChangeTab(index)   → 탭 전환
+  - handleCloseTab(index)    → 탭 닫기
+  - handleClickHome()        → 홈(대시보드) 이동
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+3. 상태 관리 (Recoil)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+■ store/atoms/layout/menu-atom.js
+  - fwMenuState          : 최상위 메뉴 배열 (Header 렌더링용)
+  - fwLeftMenuState      : 현재 좌측 서브메뉴 구조
+  - fwLeftMenuOpenAtom   : 사이드바 열림/닫힘 (boolean)
+  - fwLeftMenuNameAtom   : 현재 메뉴 이름
+
+■ store/atoms/layout/tabs-atom.js
+  - tabStore             : 열린 탭 배열
+  - currentTabIndexStore : 현재 활성 탭 인덱스
+  - topLevelstore        : 현재 최상위 메뉴 ID
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+4. 인증 + 메뉴 로딩
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+■ pages/Auth.jsx (Auth-fscps.jsx)
+  - 로그인 페이지
+  - 로그인 성공 → POST /api/userInfo/v1.0 호출
+  - 응답에서 menuList 추출 → localStorage에 저장
+  - sessionStorage에 사용자 정보 + 권한 저장
+
+■ App.jsx
+  - localStorage에서 sessionMenuList 읽기
+  - lazy loading으로 컴포넌트 동적 import
+  - Recoil fwMenuState에 메뉴 데이터 세팅
+  - ContentsPage 렌더링
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+5. 메뉴 관리 페이지 (관리자용)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+■ pages/cps/system/systemmng/ProgramMng.jsx
+  - 프로그램(메뉴) CRUD 관리 화면
+  - Tabulator 그리드로 메뉴 목록 표시
+  - 메뉴 추가/수정/삭제
+  - 메뉴 속성: 코드, 이름, 레벨, URL, 사용여부 등
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+6. 라우터
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+■ router/index.js
+  - createBrowserRouter 사용
+  - / → Auth (로그인)
+  - /main → App (ContentsPage: Header + LeftMenu + MdiTab + Content)
+  - 실제 페이지 전환은 라우터가 아닌 MdiTab이 관리
+    (탭 기반 SPA, URL은 /main 고정)

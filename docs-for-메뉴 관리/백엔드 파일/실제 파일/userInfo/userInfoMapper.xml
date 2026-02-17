@@ -1,0 +1,325 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.cj.freshway.fs.biz.common.userInfo.UserInfoMapper">
+
+	<select id="selectAuthList" parameterType="java.lang.String" resultType="com.cj.freshway.fs.biz.common.userInfo.dto.AuthDto">
+		select	/* com.cj.freshway.fs.biz.common.userInfo.UserInfoMapper.selectAuthList */
+			a.prog_url as url,
+			coalesce(b.search_yn, '0') as search_yn,
+			coalesce(b.new_yn, '0') as new_yn,
+			coalesce(b.delete_yn, '0') as delete_yn,
+			coalesce(b.save_yn, '0') as save_yn,
+			coalesce(b.print_yn, '0') as print_yn,
+			coalesce(b.btn1_yn, '0') as btn1_yn,
+			coalesce(b.btn2_yn, '0') as btn2_yn,
+			coalesce(b.btn3_yn, '0') as btn3_yn,
+			coalesce(b.btn4_yn, '0') as btn4_yn,
+			coalesce(b.btn5_yn, '0') as btn5_yn,
+			coalesce(b.btn6_yn, '0') as btn6_yn,
+			coalesce(b.btn7_yn, '0') as btn7_yn,
+			coalesce(b.btn8_yn, '0') as btn8_yn,
+			coalesce(b.btn9_yn, '0') as btn9_yn,
+			coalesce(b.btn10_yn, '0') as btn10_yn,
+			coalesce(b.use_yn, '0') as use_yn,
+			a.btn1_nm,
+			a.btn2_nm,
+			a.btn3_nm,
+			a.btn4_nm,
+			a.btn5_nm,
+			a.btn6_nm,
+			a.btn7_nm,
+			a.btn8_nm,
+			a.btn9_nm,
+			a.btn10_nm
+		from frameone_program_fsmns a
+		left outer join frameone_auth_prog_fsmns b
+		on b.prog_cd = a.prog_cd
+		and b.auth_cd in
+		<!--  foreach item="role" collection="roles" open="(" close=")" separator=",">
+    	#{role}
+		</foreach -->
+		(select ia.auth_cd
+ 			from frameone_auth_user ia
+ 			inner join
+      		frameone_authority ib
+      		on ia.auth_cd = ib.auth_cd
+			where ia.user_id = #{userId}
+			and ib.use_yn = '1'
+			and ib.auth_cl = '1' )
+		where 1=1 
+		and a.system_cl = 'FSBO'
+		and b.use_yn = '1'
+	    <!--and a.prog_no ILIKE '0712%'-->
+		order by prog_no
+	</select>
+
+	<!-- resultMap id="ResultMap" type="com.cj.freshway.fs.biz.common.userInfo.dto.MenuDto">
+		<id column="up_up_prog_no" property="no" jdbcType="VARCHAR" />
+	    <result column="prog_no" property="no" jdbcType="VARCHAR" />
+	    <result column="prog_cd" property="id" jdbcType="VARCHAR" />
+		<result column="prog_nm" property="menuName" jdbcType="VARCHAR" />
+	    <result column="prog_lvl" property="depth" jdbcType="INTEGER" />
+	    <result column="prog_url" property="componentName" jdbcType="VARCHAR" />
+	    <collection property="subMenus" ofType="com.cj.freshway.fs.biz.common.userInfo.dto.MenuSubDto">
+			<id column="up_prog_no" property="no" jdbcType="VARCHAR" />
+	    	<result column="prog_no" property="no" jdbcType="VARCHAR" />
+			<result column="prog_cd" property="id" jdbcType="VARCHAR" />
+			<result column="prog_nm" property="menuName" jdbcType="VARCHAR" />
+		    <result column="prog_lvl" property="depth" jdbcType="INTEGER" />
+		    <result column="prog_url" property="componentName" jdbcType="VARCHAR" />
+		    <collection property="subMenus" ofType="com.cj.freshway.fs.biz.common.userInfo.dto.MenuThirdDto">
+	    		<result column="prog_no" property="no" jdbcType="VARCHAR" />
+				<result column="prog_cd" property="id" jdbcType="VARCHAR" />
+				<result column="prog_nm" property="menuName" jdbcType="VARCHAR" />
+			    <result column="prog_lvl" property="depth" jdbcType="INTEGER" />
+			    <result column="prog_url" property="componentName" jdbcType="VARCHAR" />
+			</collection>
+		</collection>
+	</resultMap -->
+
+	<resultMap id="ResultMap" type="com.cj.freshway.fs.biz.common.userInfo.dto.MenuDto">
+		<result column="prog_no" property="no" jdbcType="VARCHAR" />
+		<result column="prog_cd" property="id" jdbcType="VARCHAR" />
+		<result column="prog_nm" property="menuName" jdbcType="VARCHAR" />
+	    <result column="prog_lvl" property="depth" jdbcType="INTEGER" />
+	    <result column="prog_url" property="componentName" jdbcType="VARCHAR" />
+	    <result column="prog_url_args" property="component" jdbcType="VARCHAR" />
+	</resultMap>
+
+	<select id="selectMenuList" parameterType="java.lang.String" resultMap="ResultMap">
+		select /* com.cj.freshway.fs.biz.common.userInfo.UserInfoMapper.selectMenuList */ *
+		  from (
+			select
+				a.prog_cd as prog_cd,
+				case
+					when b.prog_nm is null then a.prog_nm
+					else b.prog_nm
+				end as prog_nm,
+				substring(a.prog_no::varchar, 1, length(a.prog_no)-2) as up_prog_no,
+				a.prog_no as prog_no,
+	       		#{progLvl} - 3 as prog_lvl,
+	       		a.prog_url as prog_url,
+	       		a.prog_url_args as prog_url_args
+			from frameone_program_fsmns a
+			inner join frameone_program_language_fsmns b
+			on a.prog_cd = b.prog_cd
+			where 1 = 1
+			and a.use_yn = '1'
+			and a.menu_yn = '1'
+			and a.system_cl = 'FSBO'
+			and b.lang_cl = 'ko'
+			<!--and a.prog_no ILIKE '0712%'-->
+		    and a.prog_lvl = #{progLvl}
+		    and a.prog_cd in (
+	  			select prog_cd
+	 			from frameone_auth_user ia
+	 			inner join
+	      		frameone_authority ib
+	      		on ia.auth_cd = ib.auth_cd
+	      		inner join frameone_auth_prog_fsmns ic
+	      		on ia.auth_cd = ic.auth_cd
+				where ia.user_id = #{userId}
+				and ib.use_yn = '1'
+				and ib.auth_cl = '1'
+				and ic.use_yn = '1'
+			)
+		order by a.prog_no) tb
+		where 1 = 1
+		<if test="upProgNo != null and upProgNo != ''">
+		and tb.up_prog_no = #{upProgNo}
+	    </if>
+	</select>
+
+	<select id="selectUserInfo" parameterType="java.lang.String" resultType="com.cj.freshway.fs.biz.common.userInfo.dto.UserInfoDto">
+		SELECT /* com.cj.freshway.fs.biz.common.userInfo.UserInfoMapper.selectUserInfo */
+		      A.CO_ID -- 회사ID(토근세팅)
+			, A.USER_ID AS USERID -- 사용자ID(토근세팅)
+			, A.USER_NM AS USERNAME -- 사용자명(토근세팅)
+			-- , A.EMP_NO -- 사원번호
+			, D.CC_CD -- 점포ID(토근세팅)
+			-- , (SELECT CC_NM FROM TCBCM092 Z WHERE Z.CO_ID = D.CO_ID AND Z.CC_ID = D.CC_CD) AS SHP_NM -- 점포명
+			, D.ORG_ID -- 지점코드(지점ID)(토근세팅)
+			, D.DIV_ID -- 사업부코드(운영그룹ID)(토근세팅)
+			, D.SLBZ_ORG_ID -- 본부코드(FS:3000)
+			-- , E.BRC_NM -- 지점명
+			-- , E.DIV_NM -- 사업부명(그룹명)
+			-- , E.SLBZ_ORG_NM -- 본부명
+			-- , E.FS_US_YN
+		FROM FRAMEONE_USER A
+			LEFT OUTER JOIN FRAMEONE_EMP B ON A.CO_ID = B.CO_ID AND A.EMP_NO = B.EMP_NO AND B.INOFFICE_CL ='1'
+			LEFT OUTER JOIN FRAMEONE_DEPT C ON B.CO_ID = C.CO_ID AND B.DEPT_CD = C.DEPT_CD
+			LEFT OUTER JOIN TCBCM084 D ON C.CO_ID = D.CO_ID AND C.CC_CD = D.CC_CD
+			LEFT OUTER JOIN VW_TCBCM021_01 E ON D.CO_ID = E.CO_ID AND D.ORG_ID = E.ORG_ID AND D.DIV_ID = E.DIV_ID AND D.SLBZ_ORG_ID = E.SLBZ_ORG_ID
+	   WHERE A.USER_ID = #{userId}
+	</select>
+
+	<select id="selectShopAllList" parameterType="com.cj.freshway.fs.biz.common.userInfo.dto.ShopSearchDto" resultType="com.cj.freshway.fs.biz.common.userInfo.dto.ShopDto">
+		SELECT  /* com.cj.freshway.fs.biz.common.userInfo.UserInfoMapper.selectShopAllList */ 
+		   T.USERID
+		  , T.USERNAME
+		  , T.SHP_ID
+		  , T.SHP_NM
+		  FROM (
+		   SELECT 
+    			  A.USER_ID AS USERID  /* 사용자ID(토근세팅) */
+                 , A.USER_NM  AS USERNAME  /*  사용자명(토근세팅) */
+                 , D.CC_CD AS SHP_ID  /*  점포ID(토근세팅) */
+                 , (SELECT CC_NM FROM TCBCM092 Z WHERE Z.CO_ID = D.CO_ID AND Z.CC_ID = D.CC_CD) AS SHP_NM  /* 점포명 */
+              FROM FRAMEONE_USER A
+              LEFT OUTER JOIN FRAMEONE_EMP B ON A.CO_ID = B.CO_ID AND A.EMP_NO = B.EMP_NO AND B.INOFFICE_CL ='1'
+              LEFT OUTER JOIN FRAMEONE_DEPT C ON B.CO_ID = C.CO_ID AND B.DEPT_CD = C.DEPT_CD
+              LEFT OUTER JOIN TCBCM084 D ON C.CO_ID = D.CO_ID AND C.CC_CD = D.CC_CD
+              LEFT OUTER JOIN VW_TCBCM021_01 E ON D.CO_ID = E.CO_ID AND D.ORG_ID = E.ORG_ID AND D.DIV_ID = E.DIV_ID AND D.SLBZ_ORG_ID = E.SLBZ_ORG_ID
+            WHERE 1=1
+            	AND A.USE_YN ='1'
+				<if test='dvsnCd=="U"'>
+			   		AND A.USER_NM ILIKE #{shpNm} || '%'
+			   		AND D.CC_CD IS NOT NULL
+			   </if>
+			   <if test='dvsnCd=="S"'>
+	    			AND ((SELECT CC_NM FROM TCBCM092 Z WHERE Z.CO_ID = D.CO_ID AND Z.CC_ID = D.CC_CD) ILIKE '%' || #{shpNm} || '%' OR UPPER(D.CC_CD) = UPPER(COALESCE(#{shpNm}, '')))
+		    	</if>
+			 <!--UNION
+            SELECT  /* 사용자 */
+            	  C.USER_ID AS USERID
+                 , C.USER_NM AS USERNAME
+                 , D.CC_CD  AS SHP_ID 
+                 , (SELECT CC_NM FROM TCBCM092 Z WHERE Z.CO_ID = A.CO_ID AND Z.CC_ID = A.CC_ID) AS SHP_NM
+              FROM TCBCM093 A
+              INNER JOIN FRAMEONE_USER C ON A.USR_ID = C.USER_ID AND A.CO_ID = C.CO_ID AND C.COM_CD = 'B50'
+              INNER JOIN TCBCM084 D ON A.CO_ID = D.CO_ID AND A.CC_ID = D.CC_CD
+              INNER JOIN VW_TCBCM021_01 E ON D.CO_ID = E.CO_ID AND D.ORG_ID = E.ORG_ID  AND ORG_LVL_DPT = '3'
+             WHERE ATY_DIV_CD = 'S'
+             	AND C.USE_YN ='1'
+             	<if test='dvsnCd=="U"'>
+				   AND C.USER_NM ILIKE #{shpNm} || '%'
+				   AND D.CC_CD IS NOT NULL
+				</if>
+				<if test='dvsnCd=="S"'>
+			    	AND ((SELECT CC_NM FROM TCBCM092 Z WHERE Z.CO_ID = D.CO_ID AND Z.CC_ID = D.CC_CD) ILIKE '%' || #{shpNm} || '%' OR UPPER(D.CC_CD) = UPPER(COALESCE(#{shpNm}, '')))
+			    </if>
+            UNION
+            SELECT  /* 사용자 */
+            	  C.USER_ID  AS USERID
+                 , C.USER_NM AS USERNAME
+                 , D.CC_CD  AS SHP_ID 
+                 , (SELECT CC_NM FROM TCBCM092 Z WHERE Z.CO_ID = A.CO_ID AND Z.CC_ID = A.CC_ID) AS SHP_NM
+              FROM TCBCM093 A
+              INNER JOIN FRAMEONE_EMP B ON A.USR_ID = B.DEPT_CD AND A.CO_ID = B.CO_ID
+              INNER JOIN FRAMEONE_USER C ON B.EMP_NO = C.EMP_NO AND B.CO_ID = C.CO_ID AND C.COM_CD = 'B50'
+              INNER JOIN TCBCM084 D ON A.CO_ID = D.CO_ID AND A.CC_ID = D.CC_CD
+              INNER JOIN VW_TCBCM021_01 E ON D.CO_ID = E.CO_ID AND D.ORG_ID = E.ORG_ID  AND ORG_LVL_DPT = '3'
+             WHERE ATY_DIV_CD = 'P'
+             	<if test='dvsnCd=="U"'>
+				   AND C.USER_NM ILIKE #{shpNm} || '%'
+				   AND D.CC_CD IS NOT NULL
+				</if>
+				<if test='dvsnCd=="S"'>
+			      AND ((SELECT CC_NM FROM TCBCM092 Z WHERE Z.CO_ID = D.CO_ID AND Z.CC_ID = D.CC_CD) ILIKE '%' || #{shpNm} || '%' OR UPPER(D.CC_CD) = UPPER(COALESCE(#{shpNm}, '')))
+			    </if>-->
+			 ) T
+			 JOIN TCBCM007 S 
+			 ON T.SHP_ID = S.SHP_ID
+			 WHERE S.SHP_MNG_STTS_CD IN ('01','02')
+			 ORDER BY  T.SHP_ID
+		 <include refid="paging.postgres" />
+	</select>
+
+	<select id="selectShopList" parameterType="java.lang.String" resultType="com.cj.freshway.fs.biz.common.userInfo.dto.ShopDto">
+		select shp_id, shp_nm
+		from tcbcm007
+		where shp_id
+		in (
+			select distinct
+			cc_cd
+			from pg_cm_auth_i_fn_get_slbz_org_pipe(#{userId})
+		)
+		and shp_mng_stts_cd IN ('01','02')
+	</select>
+
+	<select id="selectSiteList" parameterType="java.lang.String" resultType="com.cj.freshway.fs.biz.common.userInfo.dto.SiteDto">
+	   SELECT A.site_id AS siteId
+	            , A.site_nm AS siteNm
+	           , A.lgs_ctr_id AS lgsCtrId
+	           , B.lgs_ctr_nm  AS lgsCtrNm
+		FROM TCBCM008 A
+		LEFT OUTER JOIN TCBCM051 B ON A.CO_ID = B.CO_ID AND A.lgs_ctr_id = B.lgs_ctr_id
+		WHERE A.shp_id
+		IN (
+			select distinct
+			cc_cd
+			from pg_cm_auth_i_fn_get_slbz_org_pipe(#{userId})
+		)
+		AND A.site_mng_stts_cd IN ('01','02')
+		AND substring(A.site_id, 4,1) != '9'
+		ORDER BY A.site_id asc
+	</select>
+
+	<select id="selectNotificationSeq" resultType="java.lang.Long">
+		select /* com.cj.freshway.fs.biz.common.userInfo.UserInfoMapper.selectNotificationSeq */ nextval('sq_bcntcnhstrym')
+	</select>
+
+	<insert id="insertNotificationHist" parameterType="com.cj.freshway.fs.biz.common.userInfo.entity.NotificationHist">
+		insert	/* com.cj.freshway.fs.biz.common.notification.CmowMapper.insertNotificationHist */ into fsmns.bc_ntcn_hstry_m
+				(ntcn_hstry_serno, ttl_dvsn_cd, cn, cnfrm_yn, recr_id, rmrk, regr_id, reg_dttm, updr_id, updt_dttm)
+		values
+				(#{ntcnHstrySerno}, #{ttlDvsnCd}, #{cn}, 'N', #{recrId}, #{rmrk}, #{regrId}, now(), #{regrId}, now())
+	</insert>
+
+	<update id="updateNotificationHist" parameterType="com.cj.freshway.fs.biz.common.userInfo.entity.NotificationHist">
+		update /* com.cj.freshway.fs.biz.common.notification.CmowMapper.updateNotificationHist */
+			fsmns.bc_ntcn_hstry_m
+		set
+			cnfrm_yn = 'Y',
+			updr_id = #{recrId},
+			updt_dttm = now()
+		WHERE ntcn_hstry_serno = #{ntcnHstrySerno}
+	</update>
+
+	<select id="selectNotificationHistList" resultType="com.cj.freshway.fs.biz.common.userInfo.entity.NotificationHist">
+		select
+			/* com.cj.freshway.fs.biz.common.notification.CmowMapper.selectNotificationHistList */
+			ntcn_hstry_serno
+			, ttl_dvsn_cd
+			, PG_COM_GET_COMM_NM_I_FN_COM_GET_COMM_NM('FN29', a.ttl_dvsn_cd) as ttl_dvsn_nm
+			, cn
+			, cnfrm_yn
+			, rmrk
+			, recr_id
+			, regr_id
+			,(
+				select user_nm
+				from PG_CM_AUTH_I_FN_GET_SLBZ_ORG_PIPE(a.regr_id , 'U'))  AS regr_nm /* 등록자 명 */
+			, reg_dttm
+			, to_char(a.reg_dttm, 'YYYY.MM.DD') as reg_dt
+			, updr_id
+			, updt_dttm
+		from fsmns.bc_ntcn_hstry_m a
+		where recr_id = #{recrId}
+		 and  reg_dttm <![CDATA[ >= ]]> CURRENT_TIMESTAMP - INTERVAL '7 days'
+  		 and reg_dttm <![CDATA[ <= ]]> CURRENT_TIMESTAMP
+		limit 5
+	</select>
+
+	<delete id="deleteMyMenu" parameterType="java.lang.String">
+		delete 	/* com.cj.freshway.fs.biz.common.userInfo.UserInfoMapper.deleteMyMenu */
+		  from 	fsmns.bc_my_fvrt_menu_m
+		 where setup_id = #{setupId}
+	</delete>
+
+	<insert id="insertMyMenu" parameterType="map">
+		insert	/* com.cj.freshway.fs.biz.common.userInfo.UserInfoMapper.insertMyMenu */ into fsmns.bc_my_fvrt_menu_m
+				(prgm_cd, setup_id, regr_id, reg_dttm, updr_id, updt_dttm)
+		values
+				<foreach collection="list" item="item" separator=",">
+				(#{item.prgmCd}, #{setupId}, #{setupId}, now(), #{setupId}, now())
+				</foreach>
+	</insert>
+
+	<select id="selectCmntCnt" parameterType="string" resultType="java.lang.String">
+	    SELECT COUNT(*)
+			FROM CC_CMNT_D
+			WHERE REGR_ID = #{id}
+	</select>
+</mapper>

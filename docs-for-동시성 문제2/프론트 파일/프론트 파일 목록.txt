@@ -1,0 +1,48 @@
+================================================================
+정산/결제 영역 — 프론트 실제 파일 목록
+================================================================
+
+■ 정산-PosSalesReg (POS 매출등록 정산)
+
+  PosSalesReg.jsx          : 매출등록 메인 페이지
+  PosSalesReg-fetch.js     : API 호출 함수
+
+  실무 경로: pages/cps/closing/closingmng/PosSalesReg.jsx
+  관련 컴포넌트 (실무에 존재, 여기 미복사):
+    - PosSalesRegSearch.jsx        : 검색폼
+    - PosSalesRegSalesDtl.jsx      : 매출 상세
+    - PosSalesRegCalcDtl.jsx       : 정산 상세
+    - PosSalesRegSalesPayment.jsx  : 결제 내역
+    - PosSalesRegSendGdoh.jsx      : 시재 전송
+    - PosSalesRegSendSales.jsx     : 매출 전송
+
+
+■ 카드정산-CrdtCardAck (신용카드 정산)
+
+  CrdtCardAckGdohRegPop.jsx          : 카드 정산 팝업 메인
+  CrdtCardAckGdohRegPop-fetch.js     : API 호출 함수
+
+  실무 경로: pages/cps/closing/closingmng/CrdtCardAckGdohRegPop.jsx
+
+
+■ 시재정산-GdohRegCnclAprv (시재 정산 승인)
+
+  GdohRegCnclAprv.jsx      : 시재 정산 승인/취소 페이지
+
+  실무 경로: pages/cps/closing/closingmng/GdohRegCnclAprv.jsx
+
+
+■ 수기매출-MnulCustSalesReg (수기매출 등록)
+
+  MnulCustSalesReg.jsx          : 수기매출 등록 페이지
+  MnulCustSalesReg-fetch.js     : API 호출 함수
+
+  실무 경로: pages/cps/closing/closingmng/MnulCustSalesReg.jsx
+
+
+■ 프론트는 동시성과 직접 관련 없음
+
+  동시성 조치는 전부 백엔드에서 처리.
+  프론트는 API 호출 + 결과 표시 역할.
+  다만 낙관적 락의 경우 version 값을 프론트가 보내줘야 함
+  (현재 실무에는 낙관적 락 미구현).

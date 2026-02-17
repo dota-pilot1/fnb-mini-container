@@ -1,0 +1,594 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.cj.freshway.fs.cps.closing.closingmng.CrdtCardAckGdohRegMapper">
+
+	<select id="crdtCardAckGdohRegLst" parameterType="com.cj.freshway.fs.cps.closing.closingmng.dto.CrdtCardAckGdohRegDto" resultType="com.cj.freshway.fs.cps.closing.closingmng.entity.CrdtCardAckGdohRegEntity">
+	    /* com.cj.freshway.fs.cps.closing.closingmng.CrdtCardAckGdohRegMapper.crdtCardAckGdohRegLst(CrdtCardAckGdohRegDto)[카드승인내역] */
+	    SELECT
+			(ROW_NUMBER() OVER(ORDER BY WACC_SEQ, MCHN_ID, CRDT_CRD_ACK_HMS)) AS ROWNUM, *
+		FROM
+			(
+				SELECT
+				  A.CO_ID              AS CO_ID
+				, A.SHP_ID             AS SHOP_ID
+				, B.STE_ID             AS STE_ID
+				, A.CRDT_CRD_ACK_YMD   AS CRDT_CRD_ACK_YMD
+				, A.CRDT_CRD_ACK_HMS   AS CRDT_CRD_ACK_HMS
+				, A.CRDT_CRD_ACK_NO    AS CRDT_CRD_ACK_NO
+				, A.MCHN_ID            AS MCHN_ID
+				, A.SAP_CRDCO_CD       AS CRDCO_CD
+				, (SELECT COMM_CD_NM FROM fscps.CM_CODE_M_IF WHERE COMM_CL_CD = 'FP001' AND COMM_CD = A.SAP_CRDCO_CD) AS CRDCO_NM
+				, A.CRDT_CRD_ACK_AT    AS CRDT_CRD_ACK_AT
+				, A.CRDT_CRD_ACK_CL_CD AS CRDT_CRD_ACK_CL_CD
+				, (SELECT COMM_CD_NM FROM fscps.CM_CODE_M_IF WHERE COMM_CL_CD = 'FP118' AND COMM_CD = A.CRDT_CRD_ACK_CL_CD) AS CRDT_CRD_ACK_CL_NM
+				, A.CRDCO_MBST_NO      AS CRDCO_MBST_NO
+				, A.CRDT_CRD_NO        AS CRDT_CRD_NO
+				, A.REG_DT             AS REG_DT
+				, COALESCE(C.CUST_ID, C.STE_ID) AS CUST_ID
+				, CASE
+					  WHEN C.CUST_ID = '' AND C.STE_ID = '' THEN ''
+					  WHEN C.CUST_ID != '' THEN (SELECT CUST_NM FROM FSCPS.BS_CUST_M_IF WHERE CUST_ID = C.CUST_ID)
+					  WHEN C.STE_ID != '' THEN (SELECT STE_NM FROM FSCPS.BS_STE_M_IF WHERE STE_ID = C.STE_ID)
+					  ELSE ''
+				  END AS CUST_NM
+				, C.SALES_GDOH_WACC_CD
+				, (SELECT COMM_CD_NM FROM FSCPS.CM_CODE_M_IF
+				  WHERE COMM_CL_CD = 'FS702'
+				  AND COMM_CD = C.SALES_GDOH_WACC_CD) AS SALES_GDOH_WACC_NM
+				, CASE WHEN C.SALES_GDOH_WACC_CD IS NULL THEN 1
+				       ELSE 2
+				  END AS WACC_SEQ
+			FROM fwsafsd.TCBOM004 A
+			INNER JOIN FSCPS.BS_VAN_M B
+								ON	B.CO_ID    = A.CO_ID
+								AND	B.SHOP_ID  = A.SHP_ID
+								AND B.TRMNL_ID = A.MCHN_ID
+								AND B.VAN_CMP_ID IN (
+									SELECT COMM_CD FROM FSCPS.CM_CODE_M_IF
+									WHERE COMM_CL_CD = 'FP076'
+									  AND CHARTR_REF1 = 'Y'
+									)
+			LEFT OUTER JOIN FSCPS.SA_CRDT_CUST_WACC_M C
+								ON C.CO_ID    = A.CO_ID
+								AND	C.SHOP_ID  = A.SHP_ID
+								AND C.MCHN_ID = A.MCHN_ID
+								AND C.CRDT_CRD_ACK_YMD = A.CRDT_CRD_ACK_YMD
+								AND C.CRDT_CRD_ACK_HMS = A.CRDT_CRD_ACK_HMS
+								AND C.CRDT_CRD_ACK_NO = A.CRDT_CRD_ACK_NO
+			WHERE 1 = 1
+			  AND A.CO_ID = #{coId}
+			  AND A.SHP_ID = #{shopId}
+			  AND A.CRDT_CRD_ACK_YMD = #{cardAckDt}
+			  <if test="mchnId != null and mchnId != ''">
+			  AND A.MCHN_ID ILIKE '%' || #{mchnId} || '%'
+			  </if>
+			  <if test="crdtCrdAckNo != null and crdtCrdAckNo != ''">
+			  AND A.CRDT_CRD_ACK_NO ILIKE '%' || #{crdtCrdAckNo} || '%'
+			  </if>
+			  <if test="ackTypeCd != null and ackTypeCd != ''">
+			  AND A.CRDT_CRD_ACK_CL_CD = #{ackTypeCd}
+			  </if>
+			  <if test="ackMinAmt != null">
+			  AND A.CRDT_CRD_ACK_AT <![CDATA[>=]]> #{ackMinAmt}
+			  </if>
+			  <if test="ackMaxAmt != null">
+			  AND A.CRDT_CRD_ACK_AT <![CDATA[<=]]> #{ackMaxAmt}
+			  </if>
+			  AND EXISTS(
+			  	SELECT CO_ID
+			  	FROM fscps.BS_VAN_M BVM
+			  	WHERE 1 = 1
+			  	  AND BVM.CO_ID    = A.CO_ID
+			  	  AND BVM.SHOP_ID  = A.SHP_ID
+			  	  <if test="steId != null and steId != ''">
+				  AND BVM.STE_ID   = #{steId}
+				  </if>
+			  	  AND BVM.TRMNL_ID = A.MCHN_ID
+			  )
+			  AND NOT EXISTS (
+			  	SELECT CO_ID
+			  	FROM fscps.SA_MNUL_SALES_M
+			    WHERE 1=1
+			      AND CO_ID            = A.CO_ID
+			      AND SHOP_ID          = A.SHP_ID
+			      AND CRDT_CRD_ACK_DT  = A.CRDT_CRD_ACK_YMD
+			      AND CRDT_CRD_ACK_HMS = A.CRDT_CRD_ACK_HMS
+			      AND CRDT_CRD_ACK_NO  = A.CRDT_CRD_ACK_NO
+			      AND CRDT_CRD_ACK_AMT = A.CRDT_CRD_ACK_AT
+			      AND MCHN_NO          = A.MCHN_ID
+			      AND CNCL_YN = 'N'
+			  )
+			  <if test="salesGdohWaccCdNullChk != null and salesGdohWaccCdNullChk != ''">
+			  AND SALES_GDOH_WACC_CD IS NULL
+			  </if>
+		  ) T
+
+		  ORDER BY WACC_SEQ, MCHN_ID, CRDT_CRD_ACK_HMS
+	</select>
+
+	<select id="crdtCardAckGdohRegLs_asis" parameterType="com.cj.freshway.fs.cps.closing.closingmng.dto.CrdtCardAckGdohRegDto" resultType="com.cj.freshway.fs.cps.closing.closingmng.entity.CrdtCardAckGdohRegEntity">
+		/* com.cj.freshway.fs.cps.closing.closingmng.CrdtCardAckGdohRegMapper.crdtCardAckGdohRegLst(CrdtCardAckGdohRegDto)[카드승인내역] */
+		WITH AA AS (
+			SELECT
+					CO_ID,
+					SHP_ID,
+					MCHN_ID,
+					CRDT_CRD_ACK_YMD,
+					CRDT_CRD_ACK_HMS,
+					CRDT_CRD_ACK_NO,
+					CRDT_CRD_ACK_AT
+			FROM
+			(
+				SELECT
+					T04.CO_ID,
+					T04.SHP_ID,
+					T04.MCHN_ID,
+					T04.CRDT_CRD_ACK_YMD,
+					T04.CRDT_CRD_ACK_HMS,
+					T04.CRDT_CRD_ACK_NO,
+					T04.CRDT_CRD_ACK_AT
+				FROM fwsafsd.TCBOM004 T04
+				INNER JOIN FSCPS.BS_VAN_M BVM
+				  ON  BVM.CO_ID     = T04.CO_ID
+				  AND BVM.SHOP_ID   = T04.SHP_ID
+				  AND BVM.TRMNL_ID	= T04.MCHN_ID
+				  AND BVM.CO_ID   	= #{coId}
+				  AND BVM.SHOP_ID 	= #{shopId}
+				  <if test="steId != null and steId != ''">
+				  AND BVM.STE_ID 	= #{steId}
+				  </if>
+				  AND T04.CRDT_CRD_ACK_YMD = #{cardAckDt}
+				WHERE CRDT_CRD_ACK_NO NOT IN (
+					SELECT CRDT_CRD_ACK_NO FROM (
+						SELECT T04.CRDT_CRD_ACK_NO, T04.CRDT_CRD_ACK_AT, COUNT(T04.CO_ID) CNT
+						FROM fwsafsd.TCBOM004 T04
+						INNER JOIN FSCPS.BS_VAN_M BVM
+						  ON  BVM.CO_ID     = T04.CO_ID
+						  AND BVM.SHOP_ID   = T04.SHP_ID
+						  AND BVM.TRMNL_ID	= T04.MCHN_ID
+						  AND BVM.CO_ID   	= #{coId}
+						  AND BVM.SHOP_ID 	= #{shopId}
+						  <if test="steId != null and steId != ''">
+						  AND BVM.STE_ID 	= #{steId}
+						  </if>
+						  AND T04.CRDT_CRD_ACK_YMD = #{cardAckDt}
+						GROUP BY CRDT_CRD_ACK_NO, CRDT_CRD_ACK_AT
+					) A
+					WHERE CNT > 1
+				)
+				EXCEPT
+				  (
+					SELECT CO_ID, SHOP_ID, TID, SALE_DT, SUBSTRING(APP_DT, 9, 6) SALE_HMS, APPR_NO, SALE_AMT FROM fscps.TR_CARD
+					WHERE 1 = 1
+					  AND CO_ID = #{coId}
+					  AND SHOP_ID = #{shopId}
+					  <if test="steId != null and steId != ''">
+					  AND STE_ID = #{steId}
+					  </if>
+					  AND SALE_DT = #{cardAckDt}
+					UNION ALL
+					SELECT CO_ID, SHOP_ID, TID, SALE_DT, SUBSTRING(APP_DT, 9, 6) SALE_HMS, APPR_NO, SALE_AMT FROM fscps.TR_PAY_SALES_EASY
+					WHERE 1 = 1
+					  AND CO_ID = #{coId}
+					  AND SHOP_ID = #{shopId}
+					  <if test="steId != null and steId != ''">
+					  AND STE_ID = #{steId}
+					  </if>
+					  AND SALE_DT = #{cardAckDt}
+					  AND PAY_TP = 'N'
+				)
+			) A1
+
+			union all
+
+			SELECT
+				CO_ID,
+				SHOP_ID,
+				TID,
+				SALE_DT,
+				SALE_HMS,
+				APPR_NO,
+				SALE_AMT
+			FROM
+			(
+				SELECT CO_ID, SHOP_ID, TID, SALE_DT, SALE_HMS, APPR_NO, SALE_AMT
+				FROM
+				(
+					SELECT CO_ID, SHOP_ID, TID, SALE_DT, SUBSTRING(APP_DT, 9, 6) SALE_HMS, APPR_NO, SALE_AMT FROM fscps.TR_CARD
+						WHERE 1 = 1
+						  AND CO_ID = #{coId}
+						  AND SHOP_ID = #{shopId}
+						  <if test="steId != null and steId != ''">
+						  AND STE_ID = #{steId}
+						  </if>
+						  AND SALE_DT = #{cardAckDt}
+					UNION ALL
+					SELECT CO_ID, SHOP_ID, TID, SALE_DT, SUBSTRING(APP_DT, 9, 6) SALE_HMS, APPR_NO, SALE_AMT FROM fscps.TR_PAY_SALES_EASY
+						WHERE 1 = 1
+						  AND CO_ID = #{coId}
+						  AND SHOP_ID = #{shopId}
+						  <if test="steId != null and steId != ''">
+						  AND STE_ID = #{steId}
+						  </if>
+						  AND SALE_DT = #{cardAckDt}
+						  AND PAY_TP = 'N'
+				) A
+				EXCEPT
+				(
+				SELECT
+					T04.CO_ID,
+					T04.SHP_ID,
+					T04.MCHN_ID,
+					T04.CRDT_CRD_ACK_YMD,
+					T04.CRDT_CRD_ACK_HMS,
+					T04.CRDT_CRD_ACK_NO,
+				T04.CRDT_CRD_ACK_AT
+				FROM fwsafsd.TCBOM004 T04
+				INNER JOIN FSCPS.BS_VAN_M BVM
+				  ON  BVM.CO_ID     = T04.CO_ID
+				  AND BVM.SHOP_ID   = T04.SHP_ID
+				  AND BVM.TRMNL_ID	= T04.MCHN_ID
+				  AND BVM.CO_ID   	= #{coId}
+				  AND BVM.SHOP_ID 	= #{shopId}
+				  <if test="steId != null and steId != ''">
+				  AND BVM.STE_ID 	= #{steId}
+				  </if>
+				  AND T04.CRDT_CRD_ACK_YMD = #{cardAckDt}
+				 )
+			) A2
+		)
+
+		SELECT
+			(ROW_NUMBER() OVER()) AS ROWNUM, *
+		FROM
+			(
+				SELECT
+				  A.CO_ID              AS CO_ID
+				, A.SHP_ID             AS SHOP_ID
+				, B.STE_ID             AS STE_ID
+				, A.CRDT_CRD_ACK_YMD   AS CRDT_CRD_ACK_YMD
+				, A.CRDT_CRD_ACK_HMS   AS CRDT_CRD_ACK_HMS
+				, A.CRDT_CRD_ACK_NO    AS CRDT_CRD_ACK_NO
+				, A.MCHN_ID            AS MCHN_ID
+				, A.SAP_CRDCO_CD       AS CRDCO_CD
+				, (SELECT COMM_CD_NM FROM fscps.CM_CODE_M_IF WHERE COMM_CL_CD = 'FP001' AND COMM_CD = A.SAP_CRDCO_CD) AS CRDCO_NM
+				, A.CRDT_CRD_ACK_AT    AS CRDT_CRD_ACK_AT
+				, A.CRDT_CRD_ACK_CL_CD AS CRDT_CRD_ACK_CL_CD
+				, (SELECT COMM_CD_NM FROM fscps.CM_CODE_M_IF WHERE COMM_CL_CD = 'FP118' AND COMM_CD = A.CRDT_CRD_ACK_CL_CD) AS CRDT_CRD_ACK_CL_NM
+				, A.CRDCO_MBST_NO      AS CRDCO_MBST_NO
+				, A.CRDT_CRD_NO        AS CRDT_CRD_NO
+				, A.REG_DT             AS REG_DT
+				, COALESCE(C.CUST_ID, C.STE_ID) AS CUST_ID
+				, CASE
+					  WHEN C.CUST_ID = '' AND C.STE_ID = '' THEN ''
+					  WHEN C.CUST_ID != '' THEN (SELECT CUST_NM FROM FSCPS.BS_CUST_M_IF WHERE CUST_ID = C.CUST_ID)
+					  WHEN C.STE_ID != '' THEN (SELECT STE_NM FROM FSCPS.BS_STE_M_IF WHERE STE_ID = C.STE_ID)
+					  ELSE ''
+				  END AS CUST_NM
+				, C.SALES_GDOH_WACC_CD
+				, (SELECT COMM_CD_NM FROM FSCPS.CM_CODE_M_IF
+				WHERE COMM_CL_CD = 'FS702'
+				  AND COMM_CD = C.SALES_GDOH_WACC_CD) AS SALES_GDOH_WACC_NM
+			FROM fwsafsd.TCBOM004 A
+			LEFT OUTER JOIN FSCPS.BS_VAN_M B
+								ON	B.CO_ID    = A.CO_ID
+								AND	B.SHOP_ID  = A.SHP_ID
+								AND B.TRMNL_ID = A.MCHN_ID
+								AND B.VAN_CMP_ID IN (
+									SELECT COMM_CD FROM FSCPS.CM_CODE_M_IF
+									WHERE COMM_CL_CD = 'FP076'
+									  AND CHARTR_REF1 = 'Y'
+									)
+			LEFT OUTER JOIN FSCPS.SA_CRDT_CUST_WACC_M C
+								ON C.CO_ID    = A.CO_ID
+								AND	C.SHOP_ID  = A.SHP_ID
+								AND C.MCHN_ID = A.MCHN_ID
+								AND C.CRDT_CRD_ACK_YMD = A.CRDT_CRD_ACK_YMD
+								AND C.CRDT_CRD_ACK_HMS = A.CRDT_CRD_ACK_HMS
+								AND C.CRDT_CRD_ACK_NO = A.CRDT_CRD_ACK_NO
+			WHERE 1 = 1
+			  AND A.CO_ID = #{coId}
+			  AND A.SHP_ID = #{shopId}
+			  AND A.CRDT_CRD_ACK_YMD = #{cardAckDt}
+			  <if test="mchnId != null and mchnId != ''">
+			  AND A.MCHN_ID ILIKE '%' || #{mchnId} || '%'
+			  </if>
+			  <if test="crdtCrdAckNo != null and crdtCrdAckNo != ''">
+			  AND A.CRDT_CRD_ACK_NO ILIKE '%' || #{crdtCrdAckNo} || '%'
+			  </if>
+			  <if test="ackTypeCd != null and ackTypeCd != ''">
+			  AND A.CRDT_CRD_ACK_CL_CD = #{ackTypeCd}
+			  </if>
+			  <if test="ackMinAmt != null">
+			  AND A.CRDT_CRD_ACK_AT <![CDATA[>=]]> #{ackMinAmt}
+			  </if>
+			  <if test="ackMaxAmt != null">
+			  AND A.CRDT_CRD_ACK_AT <![CDATA[<=]]> #{ackMaxAmt}
+			  </if>
+			  AND A.CRDT_CRD_ACK_NO NOT IN (
+				SELECT CRDT_CRD_ACK_NO FROM (
+					SELECT T04.CRDT_CRD_ACK_NO, T04.CRDT_CRD_ACK_AT, COUNT(T04.CO_ID) CNT
+					FROM fwsafsd.TCBOM004 T04
+					INNER JOIN fscps.BS_VAN_M BVM
+					  ON  BVM.CO_ID     = T04.CO_ID
+					  AND BVM.SHOP_ID   = T04.SHP_ID
+					  AND BVM.TRMNL_ID	= T04.MCHN_ID
+					  AND BVM.CO_ID   	= #{coId}
+					  AND BVM.SHOP_ID 	= #{shopId}
+					  <if test="steId != null and steId != ''">
+					  AND BVM.STE_ID 	= #{steId}
+					  </if>
+					  AND T04.CRDT_CRD_ACK_YMD = #{cardAckDt}
+					GROUP BY CRDT_CRD_ACK_NO, CRDT_CRD_ACK_AT
+				) A
+				WHERE CNT > 1
+			  )
+			  AND EXISTS(
+			  	SELECT CO_ID
+			  	FROM fscps.BS_VAN_M BVM
+			  	WHERE 1 = 1
+			  	  AND BVM.CO_ID    = A.CO_ID
+			  	  AND BVM.SHOP_ID  = A.SHP_ID
+			  	  <if test="steId != null and steId != ''">
+				  AND BVM.STE_ID   = #{steId}
+				  </if>
+			  	  AND BVM.TRMNL_ID = A.MCHN_ID
+			  )
+			  AND NOT EXISTS (
+			  	SELECT CO_ID
+			  	FROM fscps.SA_MNUL_SALES_M
+			    WHERE 1=1
+			      AND CO_ID            = A.CO_ID
+			      AND SHOP_ID          = A.SHP_ID
+			      AND CRDT_CRD_ACK_DT  = A.CRDT_CRD_ACK_YMD
+			      AND CRDT_CRD_ACK_HMS = A.CRDT_CRD_ACK_HMS
+			      AND CRDT_CRD_ACK_NO  = A.CRDT_CRD_ACK_NO
+			      AND CRDT_CRD_ACK_AMT = A.CRDT_CRD_ACK_AT
+			      AND MCHN_NO          = A.MCHN_ID
+			      AND CNCL_YN = 'N'
+			  )
+			  AND EXISTS (
+			  	SELECT CO_ID
+			  	FROM AA
+			  	WHERE 1=1
+			  	  AND CO_ID = A.CO_ID
+			  	  AND SHP_ID = A.SHP_ID
+			  	  AND CRDT_CRD_ACK_YMD = A.CRDT_CRD_ACK_YMD
+			  	  AND CRDT_CRD_ACK_HMS = A.CRDT_CRD_ACK_HMS
+			  	  AND CRDT_CRD_ACK_NO = A.CRDT_CRD_ACK_NO
+			  	  AND CRDT_CRD_ACK_AT = A.CRDT_CRD_ACK_AT
+			  )
+			  <if test="salesGdohWaccCdNullChk != null and salesGdohWaccCdNullChk != ''">
+			  AND C.SALES_GDOH_WACC_CD IS NULL
+			  </if>
+		  ) T
+	</select>
+
+	<select id="crdtCardAckCustLst" parameterType="com.cj.freshway.fs.cps.closing.closingmng.dto.CrdtCardAckGdohRegDto" resultType="com.cj.freshway.fs.cps.closing.closingmng.entity.CrdtCardAckGdohRegEntity">
+		SELECT /* com.cj.freshway.fs.cps.closing.closingmng.CrdtCardAckGdohRegMapper.crdtCardAckCustLst(CrdtCardAckGdohRegDto)[카드승인 고객목록] */
+		<choose>
+			<when test='codeType == "site"'>
+			CONCAT('[', STE_ID, '] ', STE_NM) AS CUST_NM
+			, STE_ID AS CUST_ID
+		FROM fscps.BS_STE_M_IF
+		WHERE CO_ID = #{coId}
+		  AND SHOP_ID = #{shopId}
+		  AND INTE_STTL_OBJ_YN = 'Y'
+		ORDER BY STE_ID
+			</when>
+			<otherwise>
+			CONCAT('[', B.CUST_ID, '] ', B.CUST_NM) AS CUST_NM
+			, B.CUST_ID
+		FROM fscps.BS_SHOP_CUST_M_IF A
+		JOIN
+			fscps.BS_CUST_M_IF B
+			ON A.CO_ID = B.CO_ID AND A.CUST_ID = B.CUST_ID
+		WHERE A.CO_ID = #{coId}
+		  AND A.SHOP_ID = #{shopId}
+		ORDER BY B.CUST_ID
+			</otherwise>
+		</choose>
+	</select>
+
+	<select id="crdtCardAckWaccLst" parameterType="com.cj.freshway.fs.cps.closing.closingmng.dto.CrdtCardAckGdohRegDto" resultType="com.cj.freshway.fs.cps.closing.closingmng.entity.CrdtCardAckGdohRegEntity">
+		SELECT /* com.cj.freshway.fs.cps.closing.closingmng.CrdtCardAckGdohRegMapper.crdtCardAckWaccLst(CrdtCardAckGdohRegDto)[카드승인 전기코드목록] */
+		      C.COMM_CD     AS SALES_GDOH_WACC_CD
+		    , C.COMM_CD_NM  AS SALES_GDOH_WACC_NM
+		FROM fscps.CM_CL_CODE_M_IF A
+		INNER JOIN
+			fscps.CM_CODE_M_IF C
+			<choose>
+				<when test='codeType == "site"'>
+				ON A.COMM_CL_CD			= 'FP113'
+				</when>
+				<otherwise>
+				ON A.COMM_CL_CD			= 'FP114'
+				</otherwise>
+			</choose>
+			AND C.COMM_CL_CD			= A.COMM_CL_CD
+		WHERE 1 = 1
+		<if test='ackTypeCd != null and ackTypeCd != ""'>
+			AND C.COMM_CD_NM      <if test='ackTypeCd == "S" or ackTypeCd == "A"'>NOT</if>   LIKE '%취소%'
+		</if>
+		ORDER BY coalesce(C.LNUP_ORD :: integer, 0), C.COMM_CD
+	</select>
+
+	<select id="crdtCardAckVanLst" parameterType="com.cj.freshway.fs.cps.closing.closingmng.dto.CrdtCardAckGdohRegDto" resultType="com.cj.freshway.fs.cps.closing.closingmng.entity.CrdtCardAckGdohRegEntity">
+		SELECT /* com.cj.freshway.fs.cps.closing.closingmng.CrdtCardAckGdohRegMapper.crdtCardAckVanLst(CrdtCardAckGdohRegDto)[카드승인 단말기목록] */
+		    BVM.STE_ID,
+		    C.COMM_CD_NM AS vanCompNm,
+		    BVM.TRMNL_ID AS mchnId
+		FROM fscps.BS_VAN_M BVM
+		INNER JOIN fscps.CM_CODE_M_IF C
+		  ON C.COMM_CL_CD = 'FP076'
+		 AND C.COMM_CD = BVM.VAN_CMP_ID
+		 AND C.CHARTR_REF1 = 'Y'
+		WHERE BVM.CO_ID = #{coId}
+		  AND BVM.SHOP_ID = #{shopId}
+	</select>
+
+	<insert id="insertCrdtCardAck" parameterType="com.cj.freshway.fs.cps.closing.closingmng.dto.CrdtCardAckGdohRegDto">
+		 WITH W_REQ_LIST AS /* com.cj.freshway.fs.cps.closing.closingmng.CrdtCardAckGdohRegMapper.insertCrdtCardAck(CrdtCardAckGdohRegDto)[신용카드 승인내역 저장] */
+         (
+	         SELECT COALESCE(
+	                                MAX(ABS(CAST(NULLIF(GDOH_SLIP_NO, '') AS NUMERIC)))
+	                                FILTER (WHERE GDOH_SLIP_NO LIKE '-%'),
+	                                0
+	                )::NUMERIC AS SLIP_NO
+         FROM FSCPS.SA_CLOSING_GDOH_SUM_M
+         WHERE CO_ID =  #{coId}
+           AND SHOP_ID =  #{shopId}
+           AND OCCR_DT = #{cardAckDt})
+	    INSERT
+	    INTO fscps.SA_CLOSING_GDOH_SUM_M (
+              CO_ID
+			, SHOP_ID
+			, MCHN_ID
+			, OCCR_DT
+			, GDOH_SLIP_NO
+			, SALES_GDOH_WACC_CD
+			, STE_ID
+			, CUST_ID
+			, CRDCO_CD
+			, GDOH_AMT
+			, SALES_GDOH_REG_CL_CD
+			, SAP_SND_STTS_CD
+			, CRT_TYPE_CD
+			, CRDT_CRD_ACK_YMD
+			, CRDT_CRD_ACK_HMS
+			, CRDT_CRD_ACK_NO
+			, DEL_YN
+			, REG_DTTM
+			, REGR_ID
+			, UPDT_DTTM
+			, UPDT_ID
+	    )
+	    SELECT
+		    A.CO_ID
+		    , A.SHOP_ID
+		    , A.MCHN_ID
+		    , A.CRDT_CRD_ACK_YMD
+		    , '-' || LPAD(((ROW_NUMBER() OVER ()) + (SELECT SLIP_NO
+                                             FROM W_REQ_LIST))::VARCHAR, 6, '0') AS SLIP_NO
+		    , A.SALES_GDOH_WACC_CD
+		    , MAX(A.STE_ID)
+		    , MAX(A.CUST_ID)
+		    , A.SAP_CRDCO_CD
+		    , (SELECT SUM(W.CRDT_CRD_ACK_AT)
+		       FROM FSCPS.SA_CRDT_CUST_WACC_M W
+		       WHERE W.CO_ID = A.CO_ID
+   	             AND W.SHOP_ID = A.SHOP_ID
+	             AND W.MCHN_ID = A.MCHN_ID
+   	             AND W.CRDT_CRD_ACK_YMD = A.CRDT_CRD_ACK_YMD
+   	             AND W.SALES_GDOH_WACC_CD = A.SALES_GDOH_WACC_CD
+   	             AND W.SAP_CRDCO_CD = A.SAP_CRDCO_CD
+		      )
+		    , '0' AS SALES_GDOH_REG_CL_CD
+		    , (
+			        SELECT CASE WHEN CHARTR_REF3='Y' THEN '1' WHEN CHARTR_REF3='N' THEN '2' ELSE '2' END
+			        FROM FSCPS.CM_CODE_M_IF
+			        WHERE COMM_CL_CD   = 'FS702'
+			          AND COMM_CD      = A.SALES_GDOH_WACC_CD
+			    ) AS SAP_SND_STTS_CD
+		    , 'C' AS CRT_TYPE_CD
+		    , A.CRDT_CRD_ACK_YMD
+	        , MAX(A.CRDT_CRD_ACK_HMS) AS CRDT_CRD_ACK_HMS
+            , MAX(A.CRDT_CRD_ACK_NO) AS CRDT_CRD_ACK_NO
+		    , 'N' AS DEL_YN
+		    , NOW()
+		    , #{userId}
+		    , NOW()
+		    , #{userId}
+	    FROM FSCPS.SA_CRDT_CUST_WACC_M A
+	    LEFT OUTER JOIN fscps.SA_CLOSING_GDOH_SUM_M B
+	      ON A.CO_ID = B.CO_ID
+	      AND A.SHOP_ID = B.SHOP_ID
+	      AND A.CRDT_CRD_ACK_YMD = B.OCCR_DT
+	    WHERE A.CO_ID = #{coId}
+	      AND A.SHOP_ID = #{shopId}
+	      AND A.CRDT_CRD_ACK_YMD = #{cardAckDt}
+	    GROUP BY A.CO_ID, A.SHOP_ID, A.MCHN_ID, A.CRDT_CRD_ACK_YMD, A.SALES_GDOH_WACC_CD, A.SAP_CRDCO_CD
+	    <!--VALUES (
+	        #{coId}
+	      , #{shopId}
+	      , #{mchnId}
+	      , #{occrDt}
+	      , LPAD((SELECT SLIP_NO FROM W_REQ_LIST)::text, 7, '0')
+	      , #{salesGdohWaccCd}
+	      , #{steId}
+	      , #{custId}
+	      , #{crdcoCd}
+	      , #{gdohAmt}
+	      , '0'
+	      , (
+		        SELECT CASE WHEN CHARTR_REF3='Y' THEN '1' WHEN CHARTR_REF3='N' THEN '2' ELSE '2' END
+		        FROM fscps.CM_CODE_M_IF
+		        WHERE COMM_CL_CD   = 'FS702'
+		          AND COMM_CD      = #{salesGdohWaccCd}
+		    )
+		  , 'M'
+		  , 'N'
+	      , NOW()
+	      , #{userId}
+	      , NOW()
+	      , #{userId}
+	    )-->
+	</insert>
+
+	<insert id="insertCrdtCustWacc" parameterType="com.cj.freshway.fs.cps.closing.closingmng.dto.CrdtCardAckGdohRegDto">
+		WITH UPSERT AS( /* com.cj.freshway.fs.cps.closing.closingmng.CrdtCardAckGdohRegMapper.insertCrdtCustWacc(CrdtCardAckGdohRegDto)[신용카드 고객사 시재내역 저장] */
+		    UPDATE fscps.SA_CRDT_CUST_WACC_M
+			SET	STE_ID = #{steId}
+				, CUST_ID = #{custId}
+				, SALES_GDOH_WACC_CD = #{salesGdohWaccCd}
+				, UPDT_DTTM = NOW()
+				, UPDT_ID = #{userId}
+			WHERE CO_ID = #{coId}
+			  AND SHOP_ID = #{shopId}
+			  AND MCHN_ID = #{mchnId}
+			  AND CRDT_CRD_ACK_YMD = #{crdtCrdAckYmd}
+			  AND CRDT_CRD_ACK_HMS = #{crdtCrdAckHms}
+			  AND CRDT_CRD_ACK_NO = #{crdtCrdAckNo}
+			RETURNING *
+			)
+			INSERT
+		    INTO fscps.SA_CRDT_CUST_WACC_M (
+	              CO_ID
+				, SHOP_ID
+				, MCHN_ID
+				, SAP_CRDCO_CD
+				, CRDT_CRD_ACK_CL_CD
+				, CRDT_CRD_ACK_YMD
+				, CRDT_CRD_ACK_HMS
+				, CRDT_CRD_ACK_NO
+				, CRDT_CRD_ACK_AT
+				, STE_ID
+				, CUST_ID
+				, SALES_GDOH_WACC_CD
+				, REG_DTTM
+				, REGR_ID
+				, UPDT_DTTM
+				, UPDT_ID
+		    )
+			SELECT #{coId}
+			      , #{shopId}
+			      , #{mchnId}
+			      , #{crdcoCd}
+			      , #{crdtCrdAckClCd}
+			      , #{crdtCrdAckYmd}
+			      , #{crdtCrdAckHms}
+			      , #{crdtCrdAckNo}
+			      , #{crdtCrdAckAt}
+			      , #{steId}
+			      , #{custId}
+			      , #{salesGdohWaccCd}
+			      , NOW()
+			      , #{userId}
+			      , NOW()
+	      		  , #{userId}
+			WHERE NOT EXISTS ( SELECT * FROM UPSERT )
+	</insert>
+</mapper>
+
+

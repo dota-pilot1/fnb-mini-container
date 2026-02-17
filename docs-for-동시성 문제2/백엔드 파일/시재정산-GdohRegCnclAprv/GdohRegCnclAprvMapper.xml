@@ -1,0 +1,237 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.cj.freshway.fs.cps.closing.closingmng.GdohRegCnclAprvMapper">
+	<!--
+	 * 시재등록 상세내역 목록 조회
+	 * @author Sungsik.Jung
+	 * 2024.10.14
+	 -->
+	<select id="selectGdohRegCnclAprvList" parameterType="com.cj.freshway.fs.cps.closing.closingmng.dto.GdohRegCnclAprvDto" resultType="com.cj.freshway.fs.cps.closing.closingmng.entity.GdohRegCnclAprvEntity">
+		SELECT	/* com.cj.freshway.fs.cps.closing.closingmng.GdohRegCnclAprvMapper.selectGdohRegCnclAprvList */
+				V01.CO_ID
+			  , V01.SHOP_ID
+			  , V01.SHOP_NM
+			  , V01.STE_ID
+			  , V01.STE_NM
+			  , V01.CUST_ID
+			  , COALESCE(V01.CUST_NM, V01.STE_NM) AS CUST_NM
+			  , V01.OCCR_DT
+			  , V01.GDOH_SLIP_NO
+			  , V01.SALES_GDOH_WACC_CD
+			  , V01.SALES_GDOH_WACC_NM
+			  , V01.SAP_SND_STTS_CD
+			  , V01.SAP_SND_STTS_NM
+			  , V01.SALES_GDOH_REG_CL_CD
+			  , V01.SALES_GDOH_REG_CL_NM
+			  , V01.ACK_STTS_CD
+			  , CM37.COMM_CD_NM AS ACK_STTS_NM
+			  , V01.GDOH_AMT
+			  , V01.APRVR_ID
+			  , COALESCE(BEM.EMP_NM, V01.APRVR_ID) AS APRVR_NM
+			  , CASE WHEN COALESCE(V01.ACK_DTM, '') != '' THEN TO_CHAR(TO_TIMESTAMP(V01.ACK_DTM, 'YYYYMMDDHH24MISS'), 'YYYY/MM/DD HH24:MI:SS') ELSE '' END AS ACK_DTM
+			  , COALESCE(UIA.USER_ID_ARR, '') AS USER_ID_ARR
+			  , V01.APRV_RPTS_ID
+			  , COALESCE(REG.USER_NM, V01.APRV_RPTS_ID) AS APRV_RPTS_NM
+			  , CASE WHEN COALESCE(V01.APRV_RPTS_DTM, '') != '' THEN TO_CHAR(TO_TIMESTAMP(V01.APRV_RPTS_DTM, 'YYYYMMDDHH24MISS'), 'YYYY/MM/DD HH24:MI:SS') ELSE '' END AS APRV_RPTS_DTM  
+			  , V01.RMK
+			  , V01.RSN_DESC
+			  , ROW_NUMBER() OVER(ORDER BY V01.CO_ID, V01.SHOP_ID, V01.SHOP_NM, V01.STE_ID, V01.STE_NM, V01.OCCR_DT, V01.SALES_GDOH_WACC_CD) AS ROW_NUM
+		FROM  (
+				SELECT	CGS.CO_ID
+					  , CGS.SHOP_ID
+					  , SHP.SHOP_NM
+					  , CGS.STE_ID
+					  , STE.STE_NM
+					  , CGS.CUST_ID
+					  , CUST.CUST_NM
+					  , CGS.OCCR_DT
+					  , CGS.GDOH_SLIP_NO
+					  , CGS.SALES_GDOH_WACC_CD
+					  , CM02.COMM_CD_NM AS SALES_GDOH_WACC_NM
+					  , CGS.SAP_SND_STTS_CD
+					  , CM20.COMM_CD_NM AS SAP_SND_STTS_NM
+					  , CGS.SALES_GDOH_REG_CL_CD
+					  , CM04.COMM_CD_NM AS SALES_GDOH_REG_CL_NM
+					  , CGS.GDOH_AMT * CASE WHEN CRDT_CRD_ACK_CL_CD IN ('B', 'H') THEN -1 ELSE 1 END AS GDOH_AMT
+					  , CASE WHEN CGS.SAP_SND_STTS_CD IN ('0', '1', '2', '3', '4', '5')
+							 THEN CGS.REG_ACK_STTS_CD
+							 ELSE CGS.CNCL_ACK_STTS_CD
+					    END  AS ACK_STTS_CD
+					  , CASE WHEN CGS.SAP_SND_STTS_CD IN ('0', '1', '2', '3', '4', '5')
+							 THEN CGS.REG_APRVR_ID
+							 ELSE CGS.CNCL_APRVR_ID
+					    END AS APRVR_ID
+					  , CASE WHEN CGS.SAP_SND_STTS_CD IN ('0', '1', '2', '3', '4', '5')
+							 THEN CGS.REG_ACK_DTM
+							 ELSE CGS.CNCL_ACK_DTM
+		                END AS ACK_DTM
+					  , CASE WHEN CGS.SAP_SND_STTS_CD IN ('0', '1', '2', '3', '4', '5')
+							 THEN CGS.REG_APRV_RPTS_DTM
+							 ELSE (CASE WHEN COALESCE(CGS.CNCL_APRV_RPTS_DTM, '') = '' THEN CGS.REG_APRV_RPTS_DTM ELSE CGS.CNCL_APRV_RPTS_DTM END)
+					    END AS APRV_RPTS_DTM
+					  , CGS.REGR_ID AS APRV_RPTS_ID
+					  , CGS.RMK
+					  , CGS.RSN_DESC
+				FROM	FSCPS.SA_CLOSING_GDOH_SUM_M CGS
+					INNER JOIN FSCPS.BS_SHOP_M_IF SHP
+						ON	SHP.CO_ID   = CGS.CO_ID
+						AND	SHP.SHOP_ID = CGS.SHOP_ID
+					LEFT OUTER JOIN FSCPS.BS_ORG_M_IF ORG
+						ON	ORG.CO_ID      = SHP.CO_ID
+						AND ORG.BOF_ORG_ID = SHP.BOF_ID
+					LEFT OUTER JOIN FSCPS.BS_STE_M_IF STE
+						ON	STE.CO_ID   = CGS.CO_ID
+						AND	STE.SHOP_ID = CGS.SHOP_ID
+						AND	STE.STE_ID  = CGS.STE_ID
+					LEFT OUTER JOIN FSCPS.BS_CUST_M_IF CUST
+						ON	CUST.CO_ID   = CGS.CO_ID
+						AND	CUST.CUST_ID  = CGS.CUST_ID
+					LEFT OUTER JOIN FSCPS.CM_CODE_M_IF CM02
+						ON	CM02.COMM_CD     = CGS.SALES_GDOH_WACC_CD
+						AND	CM02.COMM_CL_CD  = 'FS702'
+						AND CM02.USE_YN      = 'Y'
+						AND CM02.CHARTR_REF3 = 'Y'
+					LEFT OUTER JOIN FSCPS.CM_CODE_M_IF CM04
+						ON	CM04.COMM_CD    = CGS.SALES_GDOH_REG_CL_CD
+						AND	CM04.COMM_CL_CD = 'FS704'
+						AND CM04.USE_YN     = 'Y'
+					LEFT OUTER JOIN FSCPS.CM_CODE_M_IF CM20
+						ON	CM20.COMM_CD    = CGS.SAP_SND_STTS_CD
+						AND	CM20.COMM_CL_CD = 'FS620'
+						AND CM20.USE_YN     = 'Y'
+				WHERE	CGS.CO_ID = #{coId}
+				AND		CGS.OCCR_DT BETWEEN #{occrStartDt} AND #{occrTmntDt}
+				<if test="divId != null and divId != ''">
+				AND		ORG.DIV_ID = #{divId}
+				</if>
+				<if test="bofOrgId != null and bofOrgId != ''">
+				AND		ORG.BOF_ORG_ID = #{bofOrgId}
+				</if>
+				<if test="shopId != null and shopId != ''">
+				AND		CGS.SHOP_ID = #{shopId}
+				</if>
+				AND 	EXISTS  (SELECT 1
+	                              FROM FSCPS.CM_CODE_M_IF CM
+	                             WHERE CM.COMM_CL_CD     = 'FS702'
+	                               AND CM.COMM_CD        = CGS.SALES_GDOH_WACC_CD
+	                               AND CM.CHARTR_REF3    = 'Y'
+                               )
+				AND 	EXISTS (
+					      		SELECT	1
+					      		FROM 	FSCPS.PG_CM_AUTH_I_FN_GET_SLBZ_ORG_PIPE(#{coId}, #{regrId}, null) ATH
+					      		WHERE 	ATH.CC_CD = SHP.SHOP_ID
+					      	   )
+				) V01
+			LEFT OUTER JOIN FSCPS.BS_EMP_M_IF BEM
+				ON	BEM.CO_ID  = V01.CO_ID
+				AND	BEM.EMP_NO = V01.APRVR_ID
+			LEFT OUTER JOIN 
+			   (
+				SELECT	CO_ID 
+					  , EMP_NO
+					  , ARRAY_TO_STRING(ARRAY_AGG(USER_ID),',') USER_ID_ARR
+				 FROM   FSCPS.BS_USER_M_IF APR
+				 WHERE  CO_ID  = #{coId}
+				 AND    COALESCE(EMP_NO, '') != ''
+				 AND    USE_YN = 'Y'
+				 GROUP BY
+				 		CO_ID
+					  , EMP_NO
+			   ) UIA
+				ON	UIA.CO_ID  = V01.CO_ID
+				AND UIA.EMP_NO = V01.APRVR_ID
+			LEFT OUTER JOIN FSCPS.BS_USER_M_IF REG
+				ON	REG.CO_ID   = V01.CO_ID
+				AND	REG.USER_ID = V01.APRV_RPTS_ID
+			LEFT OUTER JOIN FSCPS.CM_CODE_M_IF CM37
+				ON	CM37.COMM_CD    = V01.ACK_STTS_CD
+				AND	CM37.COMM_CL_CD = 'FS637'
+				AND CM37.USE_YN     = 'Y'
+		WHERE	1 = 1
+		<if test='aprvCd == "Y"'>
+		AND		V01.ACK_STTS_CD IN ('2', '3')
+		</if>
+		<if test='aprvCd == "N"'>
+		AND		V01.ACK_STTS_CD = '1'
+		</if>
+		<if test="aprvId != null and aprvId != ''">
+		AND		UIA.USER_ID_ARR LIKE '%' || #{regrId} || '%'
+		</if>
+	</select>
+	
+	<!--
+	 * 시재 승인
+	 * @author Sungsik.Jung
+	 * 2024.10.15
+	 -->
+	<update id="updateGdohRegAprvList" parameterType="com.cj.freshway.fs.cps.closing.closingmng.entity.GdohRegCnclAprvEntity">
+		<selectKey keyProperty="empNo" resultType="java.lang.String" order="BEFORE" >
+			SELECT 	COALESCE(MAX(SUB.EMP_NO), '')
+			FROM 	FSCPS.BS_USER_M_IF SUB
+			WHERE	CO_ID   = #{coId}
+			AND		USER_ID = #{regrId}
+		</selectKey>
+		UPDATE	/* com.cj.freshway.fs.cps.closing.closingmng.GdohRegCnclAprvMapper.updateSaleUprcChngReqAckList */
+				FSCPS.SA_CLOSING_GDOH_SUM_M
+		SET 	SAP_SND_STTS_CD  = CASE WHEN SAP_SND_STTS_CD || #{ackSttsCd}='12' THEN CASE WHEN SALES_GDOH_WACC_CD = 'A05' THEN '4' ELSE '2' END
+		                                WHEN SAP_SND_STTS_CD || #{ackSttsCd}='13' THEN '0'
+		                                WHEN SAP_SND_STTS_CD || #{ackSttsCd}='62' THEN CASE WHEN SALES_GDOH_WACC_CD = 'A05' THEN '9' ELSE '7' END
+		                                WHEN SAP_SND_STTS_CD || #{ackSttsCd}='63' THEN '4'
+		                                ELSE SAP_SND_STTS_CD
+		                           END
+			  , REG_ACK_STTS_CD  = CASE WHEN SAP_SND_STTS_CD ='1' THEN #{ackSttsCd} ELSE REG_ACK_STTS_CD END 
+			  , REG_ACK_DTM      = CASE WHEN SAP_SND_STTS_CD ='1' THEN TO_CHAR(now(), 'YYYYMMDDHH24MISS') ELSE REG_ACK_DTM END 
+			  , CNCL_ACK_STTS_CD = CASE WHEN SAP_SND_STTS_CD ='6' THEN #{ackSttsCd}  ELSE CNCL_ACK_STTS_CD END
+			  , CNCL_ACK_DTM     = CASE WHEN SAP_SND_STTS_CD ='6' THEN TO_CHAR(now(), 'YYYYMMDDHH24MISS') ELSE CNCL_ACK_DTM END 
+			  , SAP_ERR_TXT      = CASE WHEN SALES_GDOH_WACC_CD='A04' THEN '환전준비금차감용(SAP 전송안함)' ELSE SAP_ERR_TXT END
+			  , RSN_DESC         = #{rsnDesc}
+			  , UPDT_ID          = #{regrId}
+			  , UPDT_DTTM        = now()
+		WHERE	CO_ID            = #{coId}
+		AND		SHOP_ID          = #{shopId}
+		AND		OCCR_DT          = #{occrDt}
+		AND		GDOH_SLIP_NO     = #{gdohSlipNo}
+		AND	  (
+			   (SAP_SND_STTS_CD = '1' AND REG_APRVR_ID = #{empNo} AND REG_ACK_STTS_CD = '1')
+				OR
+               (SAP_SND_STTS_CD = '6' AND CNCL_APRVR_ID = #{empNo} AND CNCL_ACK_STTS_CD = '1')
+              )
+	</update>
+	
+	<!--
+	 * 시재 반려
+	 * @author Sungsik.Jung
+	 * 2024.10.15
+	 -->
+	<update id="updateGdohCnclAprvList" parameterType="com.cj.freshway.fs.cps.closing.closingmng.entity.GdohRegCnclAprvEntity">
+		<selectKey keyProperty="empNo" resultType="java.lang.String" order="BEFORE" >
+			SELECT 	COALESCE(MAX(SUB.EMP_NO), '')
+			FROM 	FSCPS.BS_USER_M_IF SUB
+			WHERE	CO_ID   = #{coId}
+			AND		USER_ID = #{regrId}
+		</selectKey>
+		UPDATE	/* com.cj.freshway.fs.cps.closing.closingmng.GdohRegCnclAprvMapper.updateSaleUprcChngReqAckList */
+				FSCPS.SA_CLOSING_GDOH_SUM_M
+		SET		SAP_SND_STTS_CD    = CASE WHEN SAP_SND_STTS_CD = '1' THEN '9' ELSE '4' END
+			  , REG_ACK_STTS_CD    = '3'
+			  , REG_ACK_DTM        = TO_CHAR(NOW(), 'YYYYMMDDHH24MISS')
+			  , CNCL_DT            = CASE WHEN SAP_SND_STTS_CD = '1' THEN TO_CHAR(NOW(), 'YYYYMMDD') ELSE CNCL_DT END
+              , CNCL_APRVR_ID      = CASE WHEN SAP_SND_STTS_CD = '1' THEN #{empNo} ELSE CNCL_APRVR_ID END
+			  , CNCL_ACK_STTS_CD   = '3'
+			  , CNCL_ACK_DTM       = TO_CHAR(NOW(), 'YYYYMMDDHH24MISS')
+			  , SAP_ERR_TXT        = CASE WHEN SALES_GDOH_WACC_CD = 'A04' THEN  '환전준비금차감용(SAP 전송안함)' ELSE SAP_ERR_TXT END
+			  , RSN_DESC           = #{rsnDesc}
+			  , UPDT_ID            = #{regrId}
+			  , UPDT_DTTM          = now()
+		WHERE	CO_ID              = #{coId}
+		AND		SHOP_ID            = #{shopId}
+		AND		OCCR_DT            = #{occrDt}
+		AND		GDOH_SLIP_NO       = #{gdohSlipNo}
+		AND	  (
+			   (SAP_SND_STTS_CD = '1' AND REG_APRVR_ID = #{empNo} AND REG_ACK_STTS_CD = '1')
+				OR
+               (SAP_SND_STTS_CD = '6' AND CNCL_APRVR_ID = #{empNo} AND CNCL_ACK_STTS_CD = '1')
+              )
+	</update>
+</mapper>

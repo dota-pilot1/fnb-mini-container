@@ -1,0 +1,1953 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.cj.freshway.fs.cps.closing.closingmng.PosSalesRegMapper">
+	<select id="selectPaySales" parameterType="com.cj.freshway.fs.cps.closing.closingmng.dto.PosSalesRegDto" resultType="com.cj.freshway.fs.cps.closing.closingmng.entity.PosSalesRegEntity">
+		SELECT
+		(SELECT
+			COALESCE(SUM(SALES_AMT), 0) AS SALES_AMT
+		FROM FSCPS.SA_PAY_SALES_CASH_S
+		WHERE 1 = 1
+		  AND CO_ID = #{coId}
+		  AND SHOP_ID = #{shopId}
+		  AND STE_ID = #{steId}
+		  AND SALES_DT = #{salesDt}
+		) AMT1,
+		(SELECT
+		    COALESCE(SUM(SALES_AMT), 0) AS SALES_AMT
+		FROM FSCPS.SA_PAY_SALES_CARD_S
+		WHERE 1 = 1
+		  AND CO_ID = #{coId}
+		  AND SHOP_ID = #{shopId}
+		  AND STE_ID = #{steId}
+		  AND SALES_DT = #{salesDt}
+		) AMT2,
+		(SELECT
+			COALESCE(SUM(SALES_AMT), 0) AS SALES_AMT
+		FROM FSCPS.SA_PAY_SALES_ONCRDT_S
+		WHERE 1 = 1
+		  AND CO_ID = #{coId}
+		  AND SHOP_ID = #{shopId}
+		  AND STE_ID = #{steId}
+		  AND SALES_DT = #{salesDt}
+		) AMT3
+	</select>
+	<select id="selectOpenPrepAmt" parameterType="com.cj.freshway.fs.cps.closing.closingmng.dto.PosSalesRegDto" resultType="com.cj.freshway.fs.cps.closing.closingmng.entity.PosSalesRegEntity">
+		SELECT /* com.cj.freshway.fs.cps.closing.closingmng.PosSalesRegMapper.selectOpenPrepAmt(PosSalesRegDto)[POS매출등록 오픈준비금] */
+			coalesce(SUM( CASE WHEN DEAL_SECT = '0' THEN SALES_AMT ELSE SALES_AMT*(-1) END), 0) openPrepAmt
+		FROM fscps.TR_HEADER
+		WHERE 1 = 1
+		  AND CO_ID = #{coId}
+		  AND SHOP_ID = #{shopId}
+		  AND STE_ID = #{steId}
+		  AND SALE_DT = #{salesDt}
+		  AND DEAL_TYPE = '8'
+		  AND DEAL_MODE = '02'
+	</select>
+	<select id="selectExchPrepAmt" parameterType="com.cj.freshway.fs.cps.closing.closingmng.dto.PosSalesRegDto" resultType="com.cj.freshway.fs.cps.closing.closingmng.entity.PosSalesRegEntity">
+		SELECT /* com.cj.freshway.fs.cps.closing.closingmng.PosSalesRegMapper.selectExchPrepAmt(PosSalesRegDto)[POS매출등록 환전준비금] */
+			coalesce(SUM(X.GDOH_Amt * CASE WHEN X.SALES_GDOH_WACC_CD='A03' THEN 1
+                                     WHEN X.SALES_GDOH_WACC_CD='A04' THEN -1
+                                     WHEN X.SALES_GDOH_WACC_CD='A05' THEN -1
+                                     ELSE 0
+                                END ), 0) exchPrepAmt
+		 FROM (
+			 SELECT X.CO_ID, X.SHOP_ID,  X.OCCR_DT, GDOH_SLIP_NO, SALES_GDOH_WACC_CD, X.GDOH_AMT
+			  FROM fscps.SA_CLOSING_GDOH_SUM_M X
+			 WHERE 1 = 1
+			   AND X.CO_ID = #{coId}
+			   AND X.SHOP_ID = #{shopId}
+			   AND X.CUST_ID = #{steId}
+			   AND X.OCCR_DT <![CDATA[<=]]>	#{salesDt}
+			   AND X.SALES_GDOH_WACC_CD IN ('A03', 'A04', 'A05')
+			   AND X.DEL_YN = 'N'
+			   AND EXISTS  (SELECT 1
+			                  FROM fscps.CM_CODE_M_IF Z
+			                 WHERE Z.COMM_CL_CD     = 'FS620'
+			                   AND Z.COMM_CD        = X.SAP_SND_STTS_CD
+			                   AND Z.CHARTR_REF2    = '1')
+			UNION
+			SELECT X.CO_ID, X.SHP_ID,  X.OCCR_YMD, GDOH_SLIP_NO, SALES_GDOH_WACC_CD, X.GDOH_AT
+			  FROM fwsafsd.TCBOM002 X
+			 WHERE 1 = 1
+			   AND X.CO_ID = #{coId}
+			   AND X.SHP_ID = #{shopId}
+			   AND X.CUST_ID = #{steId}
+			   AND X.OCCR_YMD <![CDATA[<=]]> #{salesDt}
+			   AND X.SALES_GDOH_WACC_CD IN ('A03', 'A04', 'A05')
+			   AND EXISTS  (SELECT 1
+			                  FROM fscps.CM_CODE_M_IF Z
+			                 WHERE Z.COMM_CL_CD     = 'FS620'
+			                   AND Z.COMM_CD        = X.SAP_SND_STTS_CD
+			                   AND Z.CHARTR_REF2    = '1')
+		) X
+	</select>
+	<select id="selectNoSendSales" parameterType="com.cj.freshway.fs.cps.closing.closingmng.dto.PosSalesRegDto" resultType="com.cj.freshway.fs.cps.closing.closingmng.entity.PosSalesRegEntity">
+		SELECT /* com.cj.freshway.fs.cps.closing.closingmng.PosSalesRegMapper.selectNoSendSales(PosSalesRegDto)[POS매출등록 매출미전송] */
+		    (coalesce(SUM(SALE_AMT), 0) -
+			     (select coalesce(SUM(tot_sales_amt), 0) as amt
+                  from fscps.SA_CLOSING_DAILY_SALES_M
+			      where co_id = #{coId}
+			        and shop_id = #{shopId}
+			        <if test="steId != null and steId != ''">
+			        and ste_id = #{steId}
+			        </if>
+			        and sales_dt = #{salesDt}
+			        and del_yn = 'N' )) as noSendSales
+
+		FROM (
+			SELECT
+				coalesce(CASE WHEN H.DEAL_SECT = '0' THEN SUM(D.SALE_AMT) ELSE (SUM(D.SALE_AMT) * -1) END, 0) AS SALE_AMT
+			FROM fscps.TR_HEADER H
+			INNER JOIN fscps.TR_PAY P
+			     ON P.CO_ID  = H.CO_ID
+				AND P.SHOP_ID  = H.SHOP_ID
+				AND P.STE_ID  = H.STE_ID
+				AND P.SALE_DT  = H.SALE_DT
+				AND P.POS_NO = H.POS_NO
+				AND P.TRAN_NO  = H.TRAN_NO
+			INNER JOIN (
+			    SELECT
+			         'CASH'                 AS PAYMENT
+			        ,CO_ID
+			        ,SHOP_ID
+			        ,STE_ID
+			        ,SALE_DT
+			        ,POS_NO
+			        ,TRAN_NO
+			        ,SEQ
+			        ,NULL                   AS CARD_TYPE_CD
+			        ,SALE_DT || '000000'    AS APP_DT
+			        ,PAY_AMT                AS SALE_AMT
+			        ,NULL                   AS CARD_TP
+			        ,NULL                   AS APPR_NO
+			        ,NULL                   AS STORE_ID
+			        ,NULL                   AS PUR_CORP_CD
+			        ,NULL                   AS PAY_TP
+			        ,NULL                   AS CUST_ID
+			    FROM fscps.TR_CASH TC
+			    WHERE 1=1
+			      AND CO_ID      = #{coId}
+			      AND SHOP_ID    = #{shopId}
+			      <if test="steId != null and steId != ''">
+			      AND STE_ID     = #{steId}
+			      </if>
+			      AND SALE_DT    = #{salesDt}
+			    UNION ALL
+			    SELECT
+			        'CASH'                  AS PAYMENT
+			        ,CO_ID
+			        ,SHOP_ID
+			        ,STE_ID
+			        ,SALE_DT
+			        ,POS_NO
+			        ,TRAN_NO
+			        ,SEQ
+			        ,NULL                   AS CARD_TYPE_CD
+			        ,SALE_DT || '000000'    AS APP_DT
+			        ,PAY_AMT                AS SALE_AMT
+			        ,NULL                   AS CARD_TP
+			        ,NULL                   AS APPR_NO
+			        ,NULL                   AS STORE_ID
+			        ,NULL                   AS PUR_CORP_CD
+			        ,NULL                   AS PAY_TP
+			        ,NULL                   AS CUST_ID
+			    FROM fscps.TR_FRGEXCHG TF
+			    WHERE 1=1
+			      AND CO_ID      = #{coId}
+			      AND SHOP_ID    = #{shopId}
+			      <if test="steId != null and steId != ''">
+			      AND STE_ID     = #{steId}
+			      </if>
+			      AND SALE_DT    = #{salesDt}
+			    UNION ALL
+			    SELECT
+			         'CARD'                 AS PAYMENT
+			        ,CO_ID
+			        ,SHOP_ID
+			        ,STE_ID
+			        ,SALE_DT
+			        ,POS_NO
+			        ,TRAN_NO
+			        ,SEQ
+			        ,IDT_TYPE_CD            AS CARD_TYPE_CD
+			        ,APP_DT
+			        ,SALE_AMT
+			        ,IDT_TP                 AS CARD_TP
+			        ,APPR_NO
+			        ,STORE_ID
+			        ,PUR_CORP_CD
+			        ,NULL                   AS PAY_TP
+			        ,NULL                   AS CUST_ID
+			    FROM fscps.TR_CARD TC
+			    WHERE 1=1
+			      AND CO_ID      = #{coId}
+			      AND SHOP_ID    = #{shopId}
+			      <if test="steId != null and steId != ''">
+			      AND STE_ID     = #{steId}
+			      </if>
+			      AND SALE_DT    = #{salesDt}
+			    UNION ALL
+			    SELECT
+			        'ONCRDT'                AS PAYMENT
+			        ,CO_ID
+			        ,SHOP_ID
+			        ,STE_ID
+			        ,SALE_DT
+			        ,POS_NO
+			        ,TRAN_NO
+			        ,SEQ
+			        ,NULL                   AS CARD_TYPE_CD
+			        ,SALE_DT || '000000'    AS APP_DT
+			        ,PAY_AMT                AS SALE_AMT
+			        ,NULL                   AS CARD_TP
+			        ,NULL                   AS APPR_NO
+			        ,NULL                   AS STORE_ID
+			        ,NULL                   AS PUR_CORP_CD
+			        ,NULL                   AS PAY_TP
+			        ,CUST_ID
+			    FROM fscps.TR_TRADE_ACC_RECV TTAR
+			    WHERE 1=1
+			      AND CO_ID      = #{coId}
+			      AND SHOP_ID    = #{shopId}
+			      <if test="steId != null and steId != ''">
+			      AND STE_ID     = #{steId}
+			      </if>
+			      AND SALE_DT    = #{salesDt}
+			    UNION ALL
+			    SELECT
+			        CASE WHEN PAY_TP = 'N' then 'CARD'
+			             ELSE                   'ONCRDT'
+			        END AS PAYMENT
+			        ,CO_ID
+			        ,SHOP_ID
+			        ,STE_ID
+			        ,SALE_DT
+			        ,POS_NO
+			        ,TRAN_NO
+			        ,SEQ
+			        ,NULL                   AS CARD_TYPE_CD
+			        ,APP_DT
+			        ,SALE_AMT
+			        ,NULL                   AS CARD_TP
+			        ,APPR_NO
+			        ,STORE_ID
+			        ,PUR_CORP_CD
+			        ,PAY_TP 	--결제타입 (일반신용결제 : N,  머니결제 : M, 계좌결제 : A)
+			        ,CASE WHEN PAY_TP = 'N' THEN NULL
+			              ELSE                   EASY_PAY_TYPE_CD
+			         END AS CUST_ID
+			    FROM fscps.TR_PAY_SALES_EASY TPSE
+			    WHERE 1=1
+			      AND CO_ID    = #{coId}
+			      AND SHOP_ID  = #{shopId}
+			      <if test="steId != null and steId != ''">
+			      AND STE_ID   = #{steId}
+			      </if>
+			      AND SALE_DT  = #{salesDt}
+			      AND EASY_PAY_TYPE_CD || PAY_TP NOT IN ('03M', '06M', '07M')
+			 ) D ON D.CO_ID    = P.CO_ID
+				AND D.SHOP_ID  = P.SHOP_ID
+				AND D.STE_ID   = P.STE_ID
+				AND D.SALE_DT  = P.SALE_DT
+				AND D.POS_NO   = P.POS_NO
+				AND D.TRAN_NO  = P.TRAN_NO
+				AND D.SEQ      = P.SEQ
+			WHERE H.CO_ID      = #{coId}
+			  AND H.SHOP_ID    = #{shopId}
+			  <if test="steId != null and steId != ''">
+			  AND H.STE_ID     = #{steId}
+			  </if>
+			  AND H.SALE_DT    = #{salesDt}
+			  AND H.DEAL_TYPE  = '0'
+			  AND H.DEAL_MODE  = '01'
+			GROUP BY D.CO_ID, D.SHOP_ID, D.STE_ID, D.SALE_DT, D.POS_NO, D.APP_DT, D.PUR_CORP_CD, D.APPR_NO, D.PAYMENT, D.CUST_ID, D.PAY_TP, H.DEAL_SECT
+		) A
+	</select>
+	<select id="selectSendSalesComp" parameterType="com.cj.freshway.fs.cps.closing.closingmng.dto.PosSalesRegDto" resultType="com.cj.freshway.fs.cps.closing.closingmng.entity.PosSalesRegEntity">
+		SELECT /* com.cj.freshway.fs.cps.closing.closingmng.PosSalesRegMapper.selectOpenPrepAmt(PosSalesRegDto)[POS매출등록 매출전송 미완료, 완료] */
+			  coalesce(sum(CASE WHEN fm006.BILI_DOC_NO IS NOT NULL THEN tot_sales_amt end), 0) sendSalesComp
+			, coalesce(sum(CASE WHEN fm006.BILI_DOC_NO IS NULL     THEN tot_sales_amt end), 0) sendSalesIncomp
+		from fscps.SA_CLOSING_DAILY_SALES_M  M
+		INNER JOIN fwsafsd.TFMCL006          fm006
+               ON fm006.CO_ID = M.CO_ID
+              AND fm006.SITE_ID = M.STE_ID
+              AND fm006.SALES_YMD = M.SALES_DT
+              AND fm006.SALES_SEQ = M.SALES_SEQ
+              AND fm006.SALES_VAT_SEQ = M.SALES_VAT_SEQ
+		where 1 = 1
+		  AND M.CO_ID = #{coId}
+		  AND M.SHOP_ID = #{shopId}
+		  AND M.STE_ID = #{steId}
+		  AND M.SALES_DT = #{salesDt}
+		  AND M.DEL_YN = 'N'
+	</select>
+	<select id="selectNoSendGdoh" parameterType="com.cj.freshway.fs.cps.closing.closingmng.dto.PosSalesRegDto" resultType="com.cj.freshway.fs.cps.closing.closingmng.entity.PosSalesRegEntity">
+		SELECT /* com.cj.freshway.fs.cps.closing.closingmng.PosSalesRegMapper.selectNoSendGdoh(PosSalesRegDto)[POS매출등록 시재미전송] */
+		  (
+			  coalesce(SUM(SALE_AMT), 0) -
+			  (SELECT COALESCE(SUM(B.AMT), 0) AMT FROM (
+				SELECT CCMI.COMM_CD, CCMI.COMM_CD_NM, CASE WHEN CCMI.COMM_CD_NM LIKE '%취소%' THEN COALESCE(SUM(A.GDOH_AMT), 0) * -1 ELSE COALESCE(SUM(A.GDOH_AMT), 0) END AS AMT
+				   FROM FSCPS.SA_CLOSING_GDOH_SUM_M A
+				   INNER JOIN FSCPS.CM_CODE_M_IF CCMI
+				     ON A.SALES_GDOH_WACC_CD = CCMI.COMM_CD
+				     AND CCMI.COMM_CL_CD = 'FS702'
+					 AND A.CO_ID = #{coId}
+					 AND A.SHOP_ID = #{shopId}
+					 <if test="steId != null and steId != ''">
+					 AND A.STE_ID = #{steId}
+					 </if>
+					 AND A.OCCR_DT = #{salesDt}
+					 AND A.CRT_TYPE_CD = 'S'
+					 AND A.DEL_YN = 'N'
+					 AND (SELECT CHARTR_REF2 FROM fscps.CM_CODE_M_IF WHERE COMM_CL_CD = 'FP120' AND COMM_CD = A.SALES_GDOH_WACC_CD) = 'Y'
+				   GROUP BY CCMI.COMM_CD, CCMI.COMM_CD_NM
+				) B)
+			) as noSendGdoh
+		FROM (
+			SELECT
+				COALESCE(CASE WHEN H.DEAL_SECT = '0' THEN SUM(D.SALE_AMT) ELSE (SUM(D.SALE_AMT) * -1) END, 0) AS SALE_AMT  --매출액
+			FROM fscps.TR_HEADER H
+			INNER JOIN fscps.TR_PAY P
+			     ON P.CO_ID  = H.CO_ID
+				AND P.SHOP_ID  = H.SHOP_ID
+				AND P.STE_ID  = H.STE_ID
+				AND P.SALE_DT  = H.SALE_DT
+				AND P.POS_NO = H.POS_NO
+				AND P.TRAN_NO  = H.TRAN_NO
+			INNER JOIN (
+			    --현금 (원화 + 외화)
+			    SELECT
+			         'CASH'                 AS PAYMENT
+			        ,CO_ID
+			        ,SHOP_ID
+			        ,STE_ID
+			        ,SALE_DT
+			        ,POS_NO
+			        ,TRAN_NO
+			        ,SEQ
+			        ,NULL                   AS CARD_TYPE_CD
+			        ,SALE_DT || '000000'    AS APP_DT
+			        ,PAY_AMT                AS SALE_AMT
+			        ,NULL                   AS CARD_NO
+			        ,NULL                   AS CARD_TP
+			        ,NULL                   AS APPR_NO
+			        ,NULL                   AS STORE_ID
+			        ,NULL                   AS PUR_CORP_CD
+			        ,NULL                   AS PAY_TP
+			        ,NULL                   AS CUST_ID
+			    FROM fscps.TR_CASH TC
+			    WHERE 1=1
+			      AND CO_ID      = #{coId}
+			      AND SHOP_ID    = #{shopId}
+			      <if test="steId != null and steId != ''">
+			      AND STE_ID     = #{steId}
+			      </if>
+			      AND SALE_DT    = #{salesDt}
+			    UNION ALL
+			    SELECT
+			        'CASH'                  AS PAYMENT
+			        ,CO_ID
+			        ,SHOP_ID
+			        ,STE_ID
+			        ,SALE_DT
+			        ,POS_NO
+			        ,TRAN_NO
+			        ,SEQ
+			        ,NULL                   AS CARD_TYPE_CD
+			        ,SALE_DT || '000000'    AS APP_DT
+			        ,PAY_AMT                AS SALE_AMT
+			        ,NULL                   AS CARD_NO
+			        ,NULL                   AS CARD_TP
+			        ,NULL                   AS APPR_NO
+			        ,NULL                   AS STORE_ID
+			        ,NULL                   AS PUR_CORP_CD
+			        ,NULL                   AS PAY_TP
+			        ,NULL                   AS CUST_ID
+			    FROM fscps.TR_FRGEXCHG TF
+			    WHERE 1=1
+			      AND CO_ID      = #{coId}
+			      AND SHOP_ID    = #{shopId}
+			      <if test="steId != null and steId != ''">
+			      AND STE_ID     = #{steId}
+			      </if>
+			      AND SALE_DT    = #{salesDt}
+			    UNION ALL
+			    --신용카드
+			    SELECT
+			         'CARD'                 AS PAYMENT
+			        ,CO_ID
+			        ,SHOP_ID
+			        ,STE_ID
+			        ,SALE_DT
+			        ,POS_NO
+			        ,TRAN_NO
+			        ,SEQ
+			        ,IDT_TYPE_CD            AS CARD_TYPE_CD
+			        ,APP_DT
+			        ,SALE_AMT
+			        ,IDT_CD                 AS CARD_NO
+			        ,IDT_TP                 AS CARD_TP
+			        ,APPR_NO
+			        ,STORE_ID
+			        ,PUR_CORP_CD
+			        ,NULL                   AS PAY_TP
+			        ,NULL                   AS CUST_ID
+			    FROM fscps.TR_CARD TC
+			    WHERE 1=1
+			      AND CO_ID      = #{coId}
+			      AND SHOP_ID    = #{shopId}
+			      <if test="steId != null and steId != ''">
+			      AND STE_ID     = #{steId}
+			      </if>
+			      AND SALE_DT    = #{salesDt}
+			    UNION ALL
+			    --간폍결재
+			    SELECT
+			        CASE WHEN PAY_TP = 'N' then 'CARD'
+			             ELSE                   'ONCRDT'
+			        END AS PAYMENT
+			        ,CO_ID
+			        ,SHOP_ID
+			        ,STE_ID
+			        ,SALE_DT
+			        ,POS_NO
+			        ,TRAN_NO
+			        ,SEQ
+			        ,NULL                   AS CARD_TYPE_CD
+			        ,APP_DT
+			        ,SALE_AMT
+			        ,BARCODE_NO             AS CARD_NO
+			        ,NULL                   AS CARD_TP
+			        ,APPR_NO
+			        ,STORE_ID
+			        ,PUR_CORP_CD
+			        ,PAY_TP 	--결제타입 (일반신용결제 : N,  머니결제 : M, 계좌결제 : A)
+			        ,CASE WHEN PAY_TP = 'N' THEN NULL
+			              ELSE                   TPSE.EASY_PAY_TYPE_CD
+			         END AS CUST_ID
+			    FROM fscps.TR_PAY_SALES_EASY TPSE
+			    WHERE 1=1
+			      AND CO_ID      = #{coId}
+			      AND SHOP_ID    = #{shopId}
+			      <if test="steId != null and steId != ''">
+			      AND STE_ID     = #{steId}
+			      </if>
+			      AND SALE_DT    = #{salesDt}
+			      AND PAY_TP     = 'N'
+			 ) D ON D.CO_ID    = P.CO_ID
+				AND D.SHOP_ID  = P.SHOP_ID
+				AND D.STE_ID   = P.STE_ID
+				AND D.SALE_DT  = P.SALE_DT
+				AND D.POS_NO   = P.POS_NO
+				AND D.TRAN_NO  = P.TRAN_NO
+				AND D.SEQ      = P.SEQ
+			WHERE H.CO_ID      = #{coId}
+			  AND H.SHOP_ID    = #{shopId}
+			  <if test="steId != null and steId != ''">
+			  AND H.STE_ID     = #{steId}
+			  </if>
+			  AND H.SALE_DT    = #{salesDt}
+			  AND H.DEAL_MODE  = '01'
+			GROUP BY D.CO_ID, D.SHOP_ID, D.STE_ID, D.SALE_DT, D.POS_NO, D.APP_DT, D.PUR_CORP_CD, D.CARD_NO, D.APPR_NO, D.PAYMENT, D.CUST_ID, D.PAY_TP, H.DEAL_SECT
+		) A
+	</select>
+	<select id="selectSendGdohComp" parameterType="com.cj.freshway.fs.cps.closing.closingmng.dto.PosSalesRegDto" resultType="com.cj.freshway.fs.cps.closing.closingmng.entity.PosSalesRegEntity">
+		SELECT /* com.cj.freshway.fs.cps.closing.closingmng.PosSalesRegMapper.selectOpenPrepAmt(PosSalesRegDto)[POS매출등록 시재전송 미완료, 완료] */
+			coalesce(sum(CASE WHEN SAP_SND_STTS_CD = '4' THEN AMT end), 0) sendGdohComp
+			, coalesce(sum(CASE WHEN SAP_SND_STTS_CD != '4' THEN AMT end), 0) sendGdohIncomp
+		FROM (
+			SELECT CCMI.COMM_CD, CCMI.COMM_CD_NM, A.SAP_SND_STTS_CD, CASE WHEN CCMI.COMM_CD_NM LIKE '%취소%' THEN (SUM(A.GDOH_AMT) * -1) ELSE SUM(A.GDOH_AMT) END AS AMT
+			   FROM FSCPS.SA_CLOSING_GDOH_SUM_M A
+			   INNER JOIN FSCPS.CM_CODE_M_IF CCMI
+			     ON A.SALES_GDOH_WACC_CD = CCMI.COMM_CD
+			     AND CCMI.COMM_CL_CD = 'FS702'
+				 AND A.CO_ID = #{coId}
+				 AND A.SHOP_ID = #{shopId}
+				 AND A.STE_ID = #{steId}
+				 AND A.OCCR_DT = #{salesDt}
+				 AND A.DEL_YN = 'N'
+				 AND A.SAP_SND_STTS_CD != '9'
+				 AND (SELECT CHARTR_REF2 FROM fscps.CM_CODE_M_IF WHERE COMM_CL_CD = 'FP120' AND COMM_CD = A.SALES_GDOH_WACC_CD) = 'Y'
+			   GROUP BY CCMI.COMM_CD, CCMI.COMM_CD_NM, A.SAP_SND_STTS_CD
+		) B
+	</select>
+	<select id="selectStePosSales" parameterType="com.cj.freshway.fs.cps.closing.closingmng.dto.PosSalesRegDto" resultType="com.cj.freshway.fs.cps.closing.closingmng.entity.PosSalesRegEntity">
+		WITH AA AS (
+			SELECT
+					COALESCE(SUM(SALES_AMT), 0) SALES_AMT
+					, COALESCE(SUM(ACTL_SALES_AMT), 0) ACTL_SALES_AMT
+					, COALESCE(SUM(NET_SALES_AMT), 0) NET_SALES_AMT
+					, COALESCE(SUM(VAT_AMT), 0) VAT_AMT
+					, (SELECT
+					COALESCE(SUM(SALES_AMT), 0) AS SALES_AMT
+					FROM FSCPS.SA_PAY_SALES_CASH_S
+					WHERE 1 = 1
+					  AND CO_ID    = #{coId}
+					  AND SHOP_ID  = #{shopId}
+					  AND STE_ID   = #{steId}
+					  AND SALES_DT = #{salesDt}
+					) AMT1,
+					(SELECT
+					    COALESCE(SUM(SALES_AMT), 0) AS SALES_AMT
+					FROM FSCPS.SA_PAY_SALES_CARD_S
+					WHERE 1 = 1
+					  AND CO_ID    = #{coId}
+					  AND SHOP_ID  = #{shopId}
+					  AND STE_ID   = #{steId}
+					  AND SALES_DT = #{salesDt}
+					) AMT2,
+					(SELECT
+						COALESCE(SUM(SALES_AMT), 0) AS SALES_AMT
+					FROM FSCPS.SA_PAY_SALES_ONCRDT_S
+					WHERE 1 = 1
+					  AND CO_ID    = #{coId}
+					  AND SHOP_ID  = #{shopId}
+					  AND STE_ID   = #{steId}
+					  AND SALES_DT = #{salesDt}
+					) AMT3,
+					(SELECT
+						coalesce(SUM(X.GDOH_AT * CASE WHEN X.SALES_GDOH_WACC_CD='A03' THEN 1
+			                                     WHEN X.SALES_GDOH_WACC_CD='A04' THEN -1
+			                                     WHEN X.SALES_GDOH_WACC_CD='A05' THEN -1
+			                                     ELSE 0
+			                                END ), 0)
+					 FROM (
+						SELECT X.SALES_GDOH_WACC_CD, X.GDOH_AT
+						  FROM fwsafsd.TCBOM002 X
+						 WHERE 1 = 1
+						   AND X.CO_ID   = #{coId}
+						   AND X.SHP_ID  = #{shopId}
+						   AND X.CUST_ID = #{steId}
+						   AND X.OCCR_YMD <![CDATA[<=]]> #{salesDt}
+						   AND X.SALES_GDOH_WACC_CD IN ('A03', 'A04', 'A05')
+						   AND EXISTS  (SELECT 1
+						                  FROM fscps.CM_CODE_M_IF Z
+						                 WHERE Z.COMM_CL_CD     = 'FS620'
+						                   AND Z.COMM_CD        = X.SAP_SND_STTS_CD
+						                   AND Z.CHARTR_REF2    = '1')
+					) X) exchPrepAmt,
+					(SELECT
+						coalesce(SUM( CASE WHEN DEAL_SECT = '0' THEN SALES_AMT ELSE SALES_AMT*(-1) END), 0)
+					FROM fscps.TR_HEADER
+					WHERE 1 = 1
+					  AND CO_ID   = #{coId}
+					  AND SHOP_ID = #{shopId}
+					  AND STE_ID  = #{steId}
+					  AND SALE_DT = #{salesDt}
+					  AND DEAL_TYPE = '8'
+					  AND DEAL_MODE = '02') openPrepAmt
+				FROM fscps.SA_STE_POS_SALES_S
+				WHERE 1 = 1
+				  AND CO_ID    = #{coId}
+				  AND SHOP_ID  = #{shopId}
+				  AND STE_ID   = #{steId}
+				  AND SALES_DT = #{salesDt}
+		)
+		SELECT
+			SALES_AMT, ACTL_SALES_AMT, NET_SALES_AMT, VAT_AMT, AMT1, AMT2, AMT3, EXCHPREPAMT, OPENPREPAMT
+		FROM AA
+	</select>
+	<select id="selectPaySalesLst" parameterType="com.cj.freshway.fs.cps.closing.closingmng.dto.PosSalesRegDto" resultType="com.cj.freshway.fs.cps.closing.closingmng.entity.PosSalesRegEntity">
+		SELECT	 /* com.cj.freshway.fs.cps.closing.closingmng.PosSalesRegMapper.selectPaySalesLst(PosSalesRegDto)[POS매출등록 매출 세부내역 조회] */
+			(ROW_NUMBER() OVER()) AS ROWNUM,
+			POS_NO,
+			(
+				(SELECT COALESCE(SUM(case when spscs.appr_type_cd = '1' then sales_cnt else sales_cnt*-1 end), 0) AS sales_cnt
+				FROM fscps.sa_pay_sales_cash_s spscs
+				WHERE 1=1
+					AND CO_ID    = M.CO_ID
+					AND SHOP_ID  = M.SHOP_ID
+					AND STE_ID   = M.STE_ID
+					AND POS_NO   = M.POS_NO
+					AND SALES_DT = #{salesDt})
+				+
+				(SELECT COALESCE(SUM(case when spscs.appr_type_cd = '1' then sales_cnt else sales_cnt*-1 end), 0) AS sales_cnt
+				FROM fscps.sa_pay_sales_card_s spscs
+				WHERE 1=1
+					AND CO_ID    = M.CO_ID
+					AND SHOP_ID  = M.SHOP_ID
+					AND STE_ID   = M.STE_ID
+					AND POS_NO   = M.POS_NO
+					AND SALES_DT = #{salesDt})
+				+
+				(SELECT COALESCE(SUM(case when spscs.appr_type_cd = '1' then sales_cnt else sales_cnt*-1 end), 0) AS sales_cnt
+				FROM fscps.sa_pay_sales_oncrdt_s spscs
+				WHERE 1=1
+					AND CO_ID    = M.CO_ID
+					AND SHOP_ID  = M.SHOP_ID
+					AND STE_ID   = M.STE_ID
+					AND POS_NO   = M.POS_NO
+					AND SALES_DT = #{salesDt})
+			)  SALES_CNT,
+
+			(
+				(SELECT coalesce (SUM(sales_amt), 0) AS SALES_AMT
+				FROM fscps.sa_pay_sales_cash_s spscs
+				WHERE 1=1
+					AND CO_ID    = M.CO_ID
+					AND SHOP_ID  = M.SHOP_ID
+					AND STE_ID   = M.STE_ID
+					AND POS_NO   = M.POS_NO
+					AND SALES_DT = #{salesDt})
+				+
+				(SELECT coalesce (SUM(sales_amt), 0) AS SALES_AMT
+				FROM fscps.sa_pay_sales_card_s spscs
+				WHERE 1=1
+					AND CO_ID    = M.CO_ID
+					AND SHOP_ID  = M.SHOP_ID
+					AND STE_ID   = M.STE_ID
+					AND POS_NO   = M.POS_NO
+					AND SALES_DT = #{salesDt})
+				+
+				(SELECT coalesce (sum(sales_amt), 0) AS SALES_AMT
+				FROM fscps.sa_pay_sales_oncrdt_s spscs
+				WHERE 1=1
+					AND CO_ID    = M.CO_ID
+					AND SHOP_ID  = M.SHOP_ID
+					AND STE_ID   = M.STE_ID
+					AND POS_NO   = M.POS_NO
+					AND SALES_DT = #{salesDt})
+			)  SALES_AMT,
+
+			(
+				SELECT
+					coalesce (sum(sales_amt), 0) AS SALES_AMT
+				FROM fscps.sa_pay_sales_cash_s spscs
+				WHERE 1=1
+					AND CO_ID    = M.CO_ID
+					AND SHOP_ID  = M.SHOP_ID
+					AND STE_ID   = M.STE_ID
+					AND POS_NO   = M.POS_NO
+					AND SALES_DT = #{salesDt}
+			)  AMT1,
+
+			(
+				SELECT
+				    coalesce (sum(sales_amt), 0) AS SALES_AMT
+				FROM fscps.sa_pay_sales_card_s spscs
+				WHERE 1=1
+					AND CO_ID    = M.CO_ID
+					AND SHOP_ID  = M.SHOP_ID
+					AND STE_ID   = M.STE_ID
+					AND POS_NO   = M.POS_NO
+					AND SALES_DT = #{salesDt}
+			)  AMT2,
+
+			(
+				SELECT
+					coalesce (sum(sales_amt), 0) AS SALES_AMT
+				FROM fscps.sa_pay_sales_oncrdt_s spscs
+				WHERE 1=1
+					AND CO_ID    = M.CO_ID
+					AND SHOP_ID  = M.SHOP_ID
+					AND STE_ID   = M.STE_ID
+					AND POS_NO   = M.POS_NO
+					AND SALES_DT = #{salesDt}
+			) AMT3
+
+		FROM fscps.SA_PAY_SALES_S M
+			WHERE 1 = 1
+			  AND CO_ID    = #{coId}
+			  AND SHOP_ID  = #{shopId}
+			  AND STE_ID   = #{steId}
+			  AND SALES_DT = #{salesDt}
+			GROUP BY CO_ID, SHOP_ID, STE_ID, POS_NO
+			ORDER BY POS_NO
+	</select>
+	<select id="selectPaymentLst" parameterType="com.cj.freshway.fs.cps.closing.closingmng.dto.PosSalesRegDto" resultType="com.cj.freshway.fs.cps.closing.closingmng.entity.PosSalesRegEntity">
+		SELECT ROW_NUMBER() OVER() ROW_NUM, PAY_CD, PAY_NM, SALES_CNT, SALES_AMT FROM (
+			SELECT 	/* com.cj.freshway.fs.cps.closing.closingmng.PosSalesRegMapper.selectPaymentLst(PosSalesRegDto)[POS매출등록 결제수단별 조회] */
+				'201' as PAY_CD,
+				'현금' as PAY_NM,
+				sum( case when spscs.appr_type_cd = '1' then SALES_CNT else SALES_CNT*-1 end) AS SALES_CNT,
+				sum(sales_amt)  AS SALES_AMT
+			from fscps.sa_pay_sales_cash_s spscs
+			where 1=1
+				AND co_id  = #{coId}
+				AND shop_id = #{shopId}
+				AND ste_id = #{steId}
+				AND SALES_DT = #{salesDt}
+			UNION ALL
+			SELECT
+				'203' as PAY_CD,
+				'카드' as PAY_NM,
+				sum( case when spscs.appr_type_cd = '1' then SALES_CNT else SALES_CNT*-1 end) AS SALES_CNT,
+			    sum(sales_amt) AS SALES_AMT
+			from fscps.sa_pay_sales_card_s spscs
+			where 1=1
+				AND co_id  = #{coId}
+				AND shop_id = #{shopId}
+				AND ste_id = #{steId}
+				AND SALES_DT = #{salesDt}
+			UNION ALL
+			SELECT
+				'205' as PAY_CD,
+				'외상' as PAY_NM,
+				sum( case when spscs.appr_type_cd = '1' then SALES_CNT else SALES_CNT*-1 end) AS SALES_CNT,
+				sum(sales_amt)  AS SALES_AMT
+			from fscps.sa_pay_sales_oncrdt_s spscs
+			where 1=1
+				AND co_id  = #{coId}
+				AND shop_id = #{shopId}
+				AND ste_id = #{steId}
+				AND SALES_DT = #{salesDt}
+		) A
+	</select>
+	<select id="selectPaySalesCashLst" parameterType="com.cj.freshway.fs.cps.closing.closingmng.dto.PosSalesRegDto" resultType="com.cj.freshway.fs.cps.closing.closingmng.entity.PosSalesRegEntity">
+		SELECT /* com.cj.freshway.fs.cps.closing.closingmng.PosSalesRegMapper.selectPaySalesCashLst(PosSalesRegDto)[POS매출등록 결제수단별상세(현금) 상세 조회] */
+			(ROW_NUMBER() OVER(ORDER BY CUR_TYPE_CD)) AS ROWNUM, * FROM
+			(
+			SELECT
+				CUR_TYPE_CD
+				, CUR_TYPE_CD AS CUR_TYPE_NM
+				, SUM(CASE WHEN APPR_TYPE_CD = '1' THEN SALES_CNT ELSE -1*SALES_CNT END) AS SALES_CNT
+				, SUM(SALES_AMT) SALES_AMT
+				, SUM(RCV_AMT) RCV_AMT
+			FROM fscps.SA_PAY_SALES_CASH_S
+			WHERE 1 = 1
+			  AND CO_ID = #{coId}
+			  AND SHOP_ID = #{shopId}
+			  AND STE_ID = #{steId}
+			  AND SALES_DT = #{salesDt}
+			GROUP BY CO_ID, SHOP_ID, STE_ID, SALES_DT, CUR_TYPE_CD
+		) A
+		ORDER BY CUR_TYPE_CD
+	</select>
+	<select id="selectPaySalesCardLst" parameterType="com.cj.freshway.fs.cps.closing.closingmng.dto.PosSalesRegDto" resultType="com.cj.freshway.fs.cps.closing.closingmng.entity.PosSalesRegEntity">
+		SELECT /* com.cj.freshway.fs.cps.closing.closingmng.PosSalesRegMapper.selectPaySalesCashLst(PosSalesRegDto)[POS매출등록 결제수단별상세(카드) 상세 조회] */
+			(ROW_NUMBER() OVER(ORDER BY PUR_CORP_CD)) AS ROWNUM, * FROM
+			(
+			SELECT
+				PUR_CORP_CD
+				, (SELECT COMM_CD_NM FROM fscps.CM_CODE_M_IF WHERE COMM_CL_CD = 'FP108' AND COMM_CD = A.PUR_CORP_CD) AS PUR_CORP_NM
+				, SUM(CASE WHEN APPR_TYPE_CD = '1' THEN SALES_CNT ELSE -1*SALES_CNT END) AS SALES_CNT
+				, SUM(SALES_AMT) SALES_AMT
+			FROM fscps.SA_PAY_SALES_CARD_S A
+			WHERE 1 = 1
+			  AND CO_ID = #{coId}
+			  AND SHOP_ID = #{shopId}
+			  AND STE_ID = #{steId}
+			  AND SALES_DT = #{salesDt}
+			GROUP BY CO_ID, SHOP_ID, STE_ID, SALES_DT, PUR_CORP_CD
+		) A
+		ORDER BY PUR_CORP_CD
+	</select>
+	<select id="selectPaySalesOncrdtLst" parameterType="com.cj.freshway.fs.cps.closing.closingmng.dto.PosSalesRegDto" resultType="com.cj.freshway.fs.cps.closing.closingmng.entity.PosSalesRegEntity">
+		SELECT /* com.cj.freshway.fs.cps.closing.closingmng.PosSalesRegMapper.selectPaySalesOncrdtLst(PosSalesRegDto)[POS매출등록 결제수단별상세(외상) 상세 조회] */
+			(ROW_NUMBER() OVER(ORDER BY CUST_ID)) AS ROWNUM, * FROM
+			(
+			SELECT
+				A.CUST_ID
+				, C.DUTYF_DIV_CD
+				, CASE WHEN LENGTH(A.CUST_ID) <![CDATA[<]]> 8 THEN (SELECT STE_NM FROM fscps.BS_STE_M_IF WHERE STE_ID = A.CUST_ID) else (SELECT CUST_NM FROM fscps.BS_CUST_M_IF WHERE CUST_ID = A.CUST_ID) END AS CUST_NM
+				, SUM(CASE WHEN A.APPR_TYPE_CD = '1' THEN A.SALES_CNT ELSE -1*A.SALES_CNT END) AS SALES_CNT
+				, SUM(A.SALES_AMT) SALES_AMT
+				, CASE WHEN B.CO_ID IS NULL THEN 'N' ELSE 'Y' END AS TAX_BIL_YN
+			FROM fscps.SA_PAY_SALES_ONCRDT_S A
+			LEFT OUTER JOIN fwsafsd.TFMCL006 B
+			ON A.CO_ID = B.CO_ID
+			AND A.STE_ID = B.SITE_ID
+			AND A.SALES_DT = B.SALES_YMD
+			AND A.CUST_ID = B.CUST_ID
+			AND B.BLNC_CL_CD='21'
+			AND B.TAX_BIL_PBL_NO IS NOT NULL
+			AND B.DEL_YN='0'
+			LEFT OUTER join fscps.SA_ONCRDT_TAX_PBL_M C
+			ON A.CO_ID = C.CO_ID
+			AND A.STE_ID = C.STE_ID
+			AND A.SALES_DT = C.SALES_DT
+			AND A.CUST_ID = C.CUST_ID
+			WHERE 1 = 1
+			  AND A.CO_ID = #{coId}
+			  AND A.SHOP_ID = #{shopId}
+			  AND A.STE_ID = #{steId}
+			  AND A.SALES_DT = #{salesDt}
+			GROUP BY A.CO_ID, C.DUTYF_DIV_CD, A.SHOP_ID, A.STE_ID, A.SALES_DT, A.CUST_ID, B.CO_ID
+		) A
+		ORDER BY CUST_ID
+	</select>
+	<select id="selectPaySalesEasyLst" parameterType="com.cj.freshway.fs.cps.closing.closingmng.dto.PosSalesRegDto" resultType="com.cj.freshway.fs.cps.closing.closingmng.entity.PosSalesRegEntity">
+		SELECT /* com.cj.freshway.fs.cps.closing.closingmng.PosSalesRegMapper.selectPaySalesEasyLst(PosSalesRegDto)[POS매출등록 결제수단별상세(간편결제) 상세 조회] */
+			(ROW_NUMBER() OVER()) AS ROWNUM, * FROM
+			(
+			SELECT
+				EASY_PAY_TYPE_CD
+				, EASY_PAY_TYPE_CD AS EASY_PAY_TYPE_NM
+				, SUM(SALES_CNT) SALES_CNT
+				, SUM(SALES_AMT) SALES_AMT
+			FROM fscps.SA_PAY_SALES_EASY_S
+			WHERE 1 = 1
+			  AND CO_ID = #{coId}
+			  AND SHOP_ID = #{shopId}
+			  AND STE_ID = #{steId}
+			  AND SALES_DT = #{salesDt}
+			GROUP BY CO_ID, SHOP_ID, STE_ID, SALES_DT, EASY_PAY_TYPE_CD
+		) A
+	</select>
+	<select id="selectPaySalesServiceLst" parameterType="com.cj.freshway.fs.cps.closing.closingmng.dto.PosSalesRegDto" resultType="com.cj.freshway.fs.cps.closing.closingmng.entity.PosSalesRegEntity">
+		SELECT /* com.cj.freshway.fs.cps.closing.closingmng.PosSalesRegMapper.selectPaySalesServiceLst(PosSalesRegDto)[POS매출등록 결제수단별상세(서비스) 상세 조회] */
+			(ROW_NUMBER() OVER()) AS ROWNUM, * FROM
+			(
+			SELECT
+				  PAY_CD
+				, PAY_CD AS PAY_CD_NM
+				, SUM( case when appr_type_cd = '1' then SALES_CNT else SALES_CNT*-1 end) AS SALES_CNT
+				, SUM(SALES_AMT) SALES_AMT
+			FROM fscps.SA_PAY_SALES_S
+			WHERE 1 = 1
+			  AND CO_ID = #{coId}
+			  AND SHOP_ID = #{shopId}
+			  AND STE_ID = #{steId}
+			  AND SALES_DT = #{salesDt}
+			  AND PAY_CD = '208'
+			GROUP BY CO_ID, SHOP_ID, STE_ID, SALES_DT, PAY_CD
+		) A
+	</select>
+	<select id="selectPosSapCompareCnt" parameterType="com.cj.freshway.fs.cps.closing.closingmng.dto.PosSalesRegDto" resultType="Integer">
+<!--		SELECT /* com.cj.freshway.fs.cps.closing.closingmng.PosSalesRegMapper.selectPosSapCompareCnt(PosSalesRegDto)[POS매출등록 카드결제대사(건수) 조회] */
+		COUNT(*) CNT FROM
+		((
+		SELECT
+			T04.CO_ID,
+			T04.SHP_ID,
+			T04.MCHN_ID,
+			T04.CRDT_CRD_ACK_YMD,
+			T04.CRDT_CRD_ACK_HMS,
+			T04.CRDT_CRD_ACK_NO,
+			T04.CRDT_CRD_ACK_AT
+		FROM fwsafsd.TCBOM004 T04
+		INNER JOIN FSCPS.BS_VAN_M BVM
+		  ON  BVM.CO_ID     = T04.CO_ID
+		  AND BVM.SHOP_ID   = T04.SHP_ID
+		  AND BVM.TRMNL_ID	= T04.MCHN_ID
+		  AND BVM.CO_ID   	= #{coId}
+		  AND BVM.SHOP_ID 	= #{shopId}
+		  AND BVM.STE_ID 	= #{steId}
+		  AND T04.CRDT_CRD_ACK_YMD = #{salesDt}
+		EXCEPT
+		  (
+			SELECT CO_ID, SHOP_ID, TID, SALE_DT, SUBSTRING(APP_DT, 9, 6) SALE_HMS, APPR_NO, SALE_AMT FROM fscps.TR_CARD
+			WHERE 1 = 1
+			  AND CO_ID = #{coId}
+			  AND SHOP_ID = #{shopId}
+			  AND STE_ID = #{steId}
+			  AND SALE_DT = #{salesDt}
+			UNION ALL
+			SELECT CO_ID, SHOP_ID, TID, SALE_DT, SUBSTRING(APP_DT, 9, 6) SALE_HMS, APPR_NO, (SALE_AMT - CPN_AMT) SALE_AMT FROM fscps.TR_PAY_SALES_EASY
+			WHERE 1 = 1
+			  AND CO_ID = #{coId}
+			  AND SHOP_ID = #{shopId}
+			  AND STE_ID = #{steId}
+			  AND SALE_DT = #{salesDt}
+			  AND PAY_TP = 'N'
+		)
+		)
+		UNION ALL
+		(
+		  (
+		  	SELECT CO_ID, SHOP_ID, TID, SALE_DT, SUBSTRING(APP_DT, 9, 6) SALE_HMS, APPR_NO, SALE_AMT FROM fscps.TR_CARD
+			WHERE 1 = 1
+			  AND CO_ID = #{coId}
+			  AND SHOP_ID = #{shopId}
+			  AND STE_ID = #{steId}
+			  AND SALE_DT = #{salesDt}
+			UNION ALL
+			SELECT CO_ID, SHOP_ID, TID, SALE_DT, SUBSTRING(APP_DT, 9, 6) SALE_HMS, APPR_NO, (SALE_AMT - CPN_AMT) SALE_AMT FROM fscps.TR_PAY_SALES_EASY
+			WHERE 1 = 1
+			  AND CO_ID = #{coId}
+			  AND SHOP_ID = #{shopId}
+			  AND STE_ID = #{steId}
+			  AND SALE_DT = #{salesDt}
+			  AND PAY_TP = 'N'
+		)
+		EXCEPT
+		SELECT
+			T04.CO_ID,
+			T04.SHP_ID,
+			T04.MCHN_ID,
+			T04.CRDT_CRD_ACK_YMD,
+			T04.CRDT_CRD_ACK_HMS,
+			T04.CRDT_CRD_ACK_NO,
+		T04.CRDT_CRD_ACK_AT
+		FROM fwsafsd.TCBOM004 T04
+		INNER JOIN FSCPS.BS_VAN_M BVM
+		  ON  BVM.CO_ID     = T04.CO_ID
+		  AND BVM.SHOP_ID   = T04.SHP_ID
+		  AND BVM.TRMNL_ID	= T04.MCHN_ID
+		  AND BVM.CO_ID   	= #{coId}
+		  AND BVM.SHOP_ID 	= #{shopId}
+		  AND BVM.STE_ID 	= #{steId}
+		  AND T04.CRDT_CRD_ACK_YMD = #{salesDt}
+		)) A-->
+		/* com.cj.freshway.fs.cps.closing.closingmng.PosSalesRegMapper.selectPosSapCompareCnt(PosSalesRegDto)[POS매출등록 카드결제대사(건수) 조회] */
+		WITH
+		v_src AS (
+		SELECT
+		T04.CO_ID,
+		T04.SHP_ID         AS SHOP_ID,
+		T04.MCHN_ID        AS TID,
+		T04.CRDT_CRD_ACK_YMD AS ACK_YMD,
+		SUBSTR(T04.CRDT_CRD_ACK_HMS, 1, 6) AS ACK_HMS,
+		T04.CRDT_CRD_ACK_NO  AS APPR_NO,
+		T04.CRDT_CRD_ACK_AT  AS SALE_AMT,
+		TO_TIMESTAMP(T04.CRDT_CRD_ACK_YMD || SUBSTR(T04.CRDT_CRD_ACK_HMS, 1, 6), 'YYYYMMDDHH24MISS') AS ACK_TS
+		FROM fwsafsd.TCBOM004 T04
+		INNER JOIN FSCPS.BS_VAN_M BVM
+		ON  BVM.CO_ID    = T04.CO_ID
+		AND BVM.SHOP_ID  = T04.SHP_ID
+		AND BVM.TRMNL_ID = T04.MCHN_ID
+		AND BVM.CO_ID    = #{coId}
+		AND BVM.SHOP_ID  = #{shopId}
+		AND BVM.STE_ID   = #{steId}
+		AND BVM.VAN_CMP_ID NOT IN (
+		SELECT COMM_CD
+		FROM FSCPS.CM_CODE_M_IF
+		WHERE COMM_CL_CD = 'FP076'
+		AND CHARTR_REF1 = 'Y'
+		)
+		WHERE T04.CRDT_CRD_ACK_YMD = #{salesDt}
+		),
+
+		t_src AS (
+		SELECT
+		CO_ID,
+		SHOP_ID,
+		TID,
+		SALE_DT,
+		SUBSTRING(APP_DT, 9, 6) AS SALE_HMS,
+		APPR_NO,
+		SALE_AMT,
+		TO_TIMESTAMP(SALE_DT || SUBSTRING(APP_DT, 9, 6), 'YYYYMMDDHH24MISS') AS SALE_TS
+		FROM fscps.TR_CARD
+		WHERE CO_ID  = #{coId}
+		AND SHOP_ID= #{shopId}
+		AND STE_ID = #{steId}
+		AND SALE_DT= #{salesDt}
+
+		UNION ALL
+
+		SELECT
+		CO_ID,
+		SHOP_ID,
+		TID,
+		SALE_DT,
+		SUBSTRING(APP_DT, 9, 6) AS SALE_HMS,
+		APPR_NO,
+		SALE_AMT,
+		TO_TIMESTAMP(SALE_DT || SUBSTRING(APP_DT, 9, 6), 'YYYYMMDDHH24MISS') AS SALE_TS
+		FROM fscps.TR_PAY_SALES_EASY
+		WHERE CO_ID  = #{coId}
+		AND SHOP_ID= #{shopId}
+		AND STE_ID = #{steId}
+		AND SALE_DT= #{salesDt}
+		AND PAY_TP = 'N'
+		),
+
+		-- 원본 의미의 "중복 예외"(승인번호 단독 기준)
+		v_dup_no AS (
+		SELECT DISTINCT APPR_NO
+		FROM (
+		SELECT APPR_NO, SALE_AMT, COUNT(*) AS cnt
+		FROM v_src
+		GROUP BY APPR_NO, SALE_AMT
+		HAVING COUNT(*) <![CDATA[>]]> 1
+		) x
+		),
+		t_unique_no AS (
+		SELECT DISTINCT APPR_NO
+		FROM (
+		SELECT APPR_NO, SALE_AMT, COUNT(*) AS cnt
+		FROM t_src
+		GROUP BY APPR_NO, SALE_AMT
+		HAVING COUNT(*) = 1
+		) y
+		),
+		v_dup_exclude_no AS (
+		SELECT APPR_NO FROM v_dup_no
+		EXCEPT
+		SELECT APPR_NO FROM t_unique_no
+		),
+		v_filtered AS (
+		SELECT *
+		FROM v_src
+		WHERE APPR_NO NOT IN (SELECT APPR_NO FROM v_dup_exclude_no)
+		),
+
+		-- (1) 실제 ±10초 매칭 키 (v_src 사용)
+		matched_keys AS (
+		SELECT DISTINCT
+		v.CO_ID, v.SHOP_ID, v.TID, v.APPR_NO, v.SALE_AMT
+		FROM v_src v
+		JOIN t_src t
+		ON  t.CO_ID   = v.CO_ID
+		AND t.SHOP_ID = v.SHOP_ID
+		AND t.TID     = v.TID
+		AND t.APPR_NO = v.APPR_NO
+		AND t.SALE_AMT= v.SALE_AMT
+		AND ABS(EXTRACT(EPOCH FROM (v.ACK_TS - t.SALE_TS))) <![CDATA[<=]]> 10
+		),
+
+		-- (2) 양쪽 모두 중복(APPR_NO 단독 기준)인 승인번호의 모든 키를 상쇄 대상으로 추가
+		dup_both_no AS (
+		SELECT APPR_NO FROM v_dup_no
+		EXCEPT
+		SELECT APPR_NO FROM t_unique_no
+		),
+		dup_both_keys AS (
+		SELECT DISTINCT CO_ID, SHOP_ID, TID, APPR_NO, SALE_AMT FROM v_src WHERE APPR_NO IN (SELECT APPR_NO FROM dup_both_no)
+		UNION
+		SELECT DISTINCT CO_ID, SHOP_ID, TID, APPR_NO, SALE_AMT FROM t_src WHERE APPR_NO IN (SELECT APPR_NO FROM dup_both_no)
+		),
+		matched_keys_all AS (
+		SELECT * FROM matched_keys
+		UNION
+		SELECT * FROM dup_both_keys
+		),
+		-- 불일치 집합
+		van_only AS (
+		SELECT v.*
+		FROM v_filtered v
+		LEFT JOIN matched_keys_all mk
+		ON mk.CO_ID   = v.CO_ID
+		AND mk.SHOP_ID = v.SHOP_ID
+		AND mk.TID     = v.TID
+		AND mk.APPR_NO = v.APPR_NO
+		AND mk.SALE_AMT= v.SALE_AMT
+		WHERE mk.CO_ID IS NULL
+		),
+		tr_only AS (
+		SELECT t.*
+		FROM t_src t
+		LEFT JOIN matched_keys_all mk
+		ON mk.CO_ID   = t.CO_ID
+		AND mk.SHOP_ID = t.SHOP_ID
+		AND mk.TID     = t.TID
+		AND mk.APPR_NO = t.APPR_NO
+		AND mk.SALE_AMT= t.SALE_AMT
+		WHERE mk.CO_ID IS NULL
+		)
+
+		SELECT COUNT(*) AS CNT
+		FROM (
+		SELECT 1 FROM van_only
+		UNION ALL
+		SELECT 1 FROM tr_only
+		) diff
+	</select>
+
+	<insert id="insertPosSales" parameterType="com.cj.freshway.fs.cps.closing.closingmng.dto.PosSalesRegDto">
+		WITH W_REQ_LIST AS
+	    (
+		    SELECT	COALESCE(MAX(SALES_SEQ), 0)::numeric AS SALES_SEQ
+		    FROM	TFMCL006
+		    WHERE	CO_ID    = #{coId}
+		    AND 	SITE_ID  = #{steId}
+		    AND 	SALES_YMD = #{salesDt}
+	    )
+	    , T004 AS
+	    (
+		    SELECT	*
+		    FROM	fwsafsd.TCBOM004
+		    WHERE	CO_ID    = #{coId}
+		    AND 	SHP_ID  = #{shopId}
+		    AND 	CRDT_CRD_ACK_YMD = #{salesDt}
+	    )
+	    INSERT INTO fscps.SA_CLOSING_DAILY_SALES_M /* com.cj.freshway.fs.cps.closing.closingmng.PosSalesRegMapper.insertPosSales(PosSalesRegDto)[POS매출등록 입력] */
+		(
+			  CO_ID
+			, SHOP_ID
+			, STE_ID
+			, SALES_DT
+			, SALES_SEQ
+			, SALES_VAT_SEQ
+			, CUST_ID
+			, MNY_DMD_DT
+			, PROF_DT
+			, PLNT_CD
+			, SALES_REG_CL_CD
+			, DUTYF_DIV_CD
+			, TAX_BIL_PBL_YN
+			, BLNC_CL_CD
+			, RPRS_GD_NO
+			, CRDCO_CD
+			, TOT_SALES_AMT
+			, NET_SALES_AMT
+			, VAT_AMT
+			, FNC_SND_YN
+			, FS_MNG_NO
+			, DDL_YN
+			, CFM_YN
+			, DEL_YN
+			, DMDPLC_ID
+			, PYPLC_ID
+			, REG_DTTM
+			, REGR_ID
+			, UPDT_DTTM
+			, UPDT_ID)
+
+		SELECT
+		  	   M.CO_ID
+				, M.SHOP_ID
+				, M.STE_ID
+				, M.SALE_DT
+				, (ROW_NUMBER() OVER() + (SELECT SALES_SEQ FROM W_REQ_LIST)) AS ROWNUM
+				, M.SALES_VAT_SEQ
+				, M.CUST_ID
+				, M.MNY_DMD_DT
+				, M.PROF_DT
+				, M.PLNT_CD
+				, M.SALES_REG_CL_CD
+				, M.DUTYF_DIV_CD
+				, CASE WHEN M.DUTYF_DIV_CD = '0' or M.DUTYF_DIV_CD = '1' THEN 'Y' ELSE 'N' END AS TAX_BIL_PBL_YN
+				, M.BLNC_CL_CD
+				, M.RPRS_GD_NO
+				, M.CRDCO_CD
+				, SUM(M.SALE_AMT) AS SALE_AMT
+				, SUM(M.SALE_AMT) - SUM(M.VAT_AMT) AS NET_SALES_AMT
+				, SUM(M.VAT_AMT) AS VAT_AMT
+				, M.FNC_SND_YN
+				, LPAD(nextval('fwsafsd.sq_tfmcl006_01')::TEXT, 10, '0')
+				, M.DDL_YN
+				, M.CFM_YN
+				, M.DEL_YN
+				, M.DMDPLC_ID
+				, M.PYPLC_ID
+				, now()
+				, #{userId}
+				, now()
+				, #{userId}
+
+		FROM (
+
+				SELECT
+				  	  D.CO_ID                                                                                                                        as CO_ID
+					, D.SHOP_ID                                                                                                                      as SHOP_ID
+					, D.STE_ID                                                                                                                       as STE_ID
+					, D.POS_NO                                                                                                                       as POS_NO
+					, D.TRAN_NO                                                                                                                      as TRAN_NO
+					, D.SALE_DT                                                                                                                      as SALE_DT
+					, 1                                                                                                                              as SALES_VAT_SEQ
+					, CASE WHEN payment = 'CASH'   THEN D.STE_ID
+					       WHEN payment = 'CARD'   THEN D.STE_ID
+					       WHEN payment = 'ONCRDT' THEN D.CUST_ID
+				           ELSE payment
+				      END                                                                                                                            as CUST_ID
+					, D.SALE_DT                                                                                                                      as MNY_DMD_DT
+					, D.SALE_DT                                                                                                                      as PROF_DT
+					, '4000'                                                                                                                         as PLNT_CD
+					, null                                                                                                                           as TAX_BIL_PBL_YN
+					, '30'                                                                                                                           as SALES_REG_CL_CD
+					, CASE WHEN D.payment != 'ONCRDT' and SUM(D.VAT_AMT) > 0 THEN '5'
+					       WHEN D.payment != 'ONCRDT' and SUM(D.VAT_AMT) = 0 THEN '4'
+					       <!--WHEN char_length(D.CUST_ID) <![CDATA[<]]> 5 and D.payment = 'ONCRDT' and SUM(D.VAT_AMT) > 0 then '1'-->
+					       <!--WHEN char_length(D.CUST_ID) <![CDATA[<]]> 5 and D.payment = 'ONCRDT' and SUM(D.VAT_AMT) = 0 then '0'-->
+					       WHEN D.payment = 'ONCRDT' then
+					       (
+							   SELECT COALESCE(NULLIF(AA.DUTYF_DIV_CD, ''), '1') AS DUTYF_DIV_CD
+							   FROM fscps.SA_ONCRDT_TAX_PBL_M AA
+							    RIGHT OUTER JOIN (SELECT '') AS M_DUAL
+							    ON AA.CO_ID = D.CO_ID
+							    AND AA.SHOP_ID = D.SHOP_ID
+								AND AA.STE_ID = D.STE_ID
+								AND AA.SALES_DT = D.SALE_DT
+								AND AA.CUST_ID = D.CUST_ID
+					       )
+					       ELSE MAX(C.TAXT_TYPE_CD)
+					  END                                                                                                                            as DUTYF_DIV_CD
+					, CASE WHEN D.payment = 'CASH'   THEN '22'
+					       WHEN D.payment = 'CARD'   THEN '23'
+					       WHEN D.payment = 'ONCRDT' THEN '21'
+				           ELSE D.payment
+				      end                                                                                                                            as BLNC_CL_CD
+					, 'Z00008'                                                                                                                       as RPRS_GD_NO
+					, D.PUR_CORP_CD                                                                                                                  as CRDCO_CD
+					, CASE WHEN H.DEAL_SECT = '0' THEN SUM(D.SALE_AMT) else (SUM(D.SALE_AMT) * -1) END                                               as SALE_AMT
+					, CASE WHEN MAX(H.VAT_AMT) = 0 THEN 0
+					       ELSE CASE WHEN H.DEAL_SECT = '0' then SUM(D.SALE_AMT) else (SUM(D.SALE_AMT) * -1) END
+					  END                                                                                                                            as TAXABLE_AMT
+					, CASE WHEN MAX(H.VAT_AMT) = 0 THEN 0
+					       ELSE CASE WHEN H.DEAL_SECT = '0' THEN ROUND((SUM(D.SALE_AMT)/MAX(H.ACTL_SALES_AMT)*MAX(H.VAT_AMT)))
+                                                            ELSE ROUND((SUM(D.SALE_AMT)/MAX(H.ACTL_SALES_AMT)*MAX(H.VAT_AMT))) * -1 END
+					  END		                                                                                                                     as VAT_AMT
+					, 'N'                                                                                                                            as FNC_SND_YN
+					, 'Y'                                                                                                                            as DDL_YN
+					, 'N'                                                                                                                            as CFM_YN
+					, 'N'			                                                                                                                 as DEL_YN
+					, MAX(C.DMDPLC_ID)                                                                                                               as DMDPLC_ID
+					, MAX(C.PYPLC_ID)      		                                                                                                     as PYPLC_ID
+					, D.PAYMENT
+					, D.PAY_TP
+					, H.DEAL_SECT
+					, D.APPR_NO
+				FROM fscps.TR_HEADER H
+				INNER JOIN fscps.TR_PAY P
+				     ON P.CO_ID  = H.CO_ID
+					AND P.SHOP_ID  = H.SHOP_ID
+					AND P.STE_ID  = H.STE_ID
+					AND P.SALE_DT  = H.SALE_DT
+					AND P.POS_NO = H.POS_NO
+					AND P.TRAN_NO  = H.TRAN_NO
+				INNER JOIN (
+				    --현금 (원화 + 외화)
+				    SELECT
+				         'CASH'                 AS PAYMENT
+				        ,CO_ID
+				        ,SHOP_ID
+				        ,STE_ID
+				        ,SALE_DT
+				        ,POS_NO
+				        ,TRAN_NO
+				        ,SEQ
+				        ,NULL                   AS CARD_TYPE_CD
+				        ,SALE_DT || '000000'    AS APP_DT
+				        ,PAY_AMT                AS SALE_AMT
+				        ,PAY_AMT                AS TAXBLE_AMT
+				        ,CEIL(PAY_AMT::FLOAT / 11) AS VAT_AMT
+				        ,0                      AS TEXFREE_AMT
+				        ,NULL                   AS TID
+				        ,NULL                   AS CARD_NO
+				        ,NULL                   AS CARD_TP
+				        ,NULL                   AS APPR_NO
+				        ,NULL                   AS STORE_ID
+				        ,NULL                   AS PUR_CORP_CD
+				        ,NULL                   AS PAY_TP
+				        ,NULL                   AS CUST_ID
+				    FROM fscps.TR_CASH TC
+				    WHERE 1=1
+				      AND CO_ID = #{coId}
+					  AND SHOP_ID = #{shopId}
+					  AND STE_ID = #{steId}
+					  AND SALE_DT = #{salesDt}
+				    UNION ALL
+				    SELECT
+				        'CASH'                  AS PAYMENT
+				        ,CO_ID
+				        ,SHOP_ID
+				        ,STE_ID
+				        ,SALE_DT
+				        ,POS_NO
+				        ,TRAN_NO
+				        ,SEQ
+				        ,NULL                   AS CARD_TYPE_CD
+				        ,SALE_DT || '000000'    AS APP_DT
+				        ,PAY_AMT                AS SALE_AMT
+				        ,PAY_AMT                AS TAXBLE_AMT
+				        ,CEIL(PAY_AMT::FLOAT / 11) AS VAT_AMT
+				        ,0                      AS TEXFREE_AMT
+				        ,NULL                   AS TID
+				        ,NULL                   AS CARD_NO
+				        ,NULL                   AS CARD_TP
+				        ,NULL                   AS APPR_NO
+				        ,NULL                   AS STORE_ID
+				        ,NULL                   AS PUR_CORP_CD
+				        ,NULL                   AS PAY_TP
+				        ,NULL                   AS CUST_ID
+				    FROM fscps.TR_FRGEXCHG TF
+				    WHERE 1=1
+				      AND CO_ID = #{coId}
+					  AND SHOP_ID = #{shopId}
+					  AND STE_ID = #{steId}
+					  AND SALE_DT = #{salesDt}
+				    UNION ALL
+				    --신용카드
+				    SELECT
+				         'CARD'                        AS PAYMENT
+				        ,TC.CO_ID
+				        ,TC.SHOP_ID
+				        ,TC.STE_ID
+				        ,TC.SALE_DT
+				        ,TC.POS_NO
+				        ,TC.TRAN_NO
+				        ,TC.SEQ
+				        ,TC.IDT_TYPE_CD                AS CARD_TYPE_CD
+				        ,TC.APP_DT
+				        ,TC.SALE_AMT
+				        ,TC.SALE_AMT                   AS TAXBLE_AMT
+				        ,CEIL(TC.SALE_AMT::FLOAT / 11) AS VAT_AMT
+				        ,TC.TEXFREE_AMT
+				        ,TC.TID
+				        ,TC.IDT_CD                     AS CARD_NO
+				        ,TC.IDT_TP                     AS CARD_TP
+				        ,TC.APPR_NO
+				        ,TC.STORE_ID
+				        ,T.sap_crdco_cd                AS PUR_CORP_CD
+				        --,(SELECT sap_crdco_cd
+				        --  FROM fwsafsd.tcbom004 t
+				        --  WHERE t.co_id            = TC.co_id
+				        --    and t.shp_id           = TC.shop_id
+				        --    and t.mchn_id          = TC.tid
+  				        --    and t.crdt_crd_ack_no  = TC.appr_no
+				        --    and t.crdt_crd_ack_ymd = substring(TC.app_dt, 1, 8)
+				        --    and t.crdt_crd_ack_hms = substring(TC.app_dt, 9, 6)
+				        --    and case when t.crdt_crd_ack_cl_cd = 'S' then TH.deal_type = '0' else '1' end
+				        --)                       AS PUR_CORP_CD
+				        ,NULL                   AS PAY_TP
+				        ,NULL                   AS CUST_ID
+				    FROM fscps.TR_CARD TC
+				    INNER JOIN fscps.TR_HEADER TH
+				       on TH.co_id   = TC.co_id
+				      and TH.shop_id = TC.shop_id
+				      and TH.ste_id  = TC.ste_id
+				      and TH.pos_no  = TC.pos_no
+				      and TH.tran_no = TC.tran_no
+				      and TH.sale_dt = TC.sale_dt
+				    LEFT OUTER JOIN T004 T
+				       on T.co_id    = TC.co_id
+				      and T.shp_id   = TC.shop_id
+				      and T.mchn_id  = TC.tid
+				      and t.crdt_crd_ack_no  = TC.appr_no
+				      and t.crdt_crd_ack_ymd = substring(TC.app_dt, 1, 8)
+				      and t.crdt_crd_ack_hms = substring(TC.app_dt, 9, 6)
+				      and t.crdt_crd_ack_at = TC.sale_amt -- 조인조건에 금액도 추가
+				      and case when t.crdt_crd_ack_cl_cd = 'S' then TH.deal_type = '0' else '1' end
+				    WHERE 1=1
+				      AND TC.CO_ID = #{coId}
+					  AND TC.SHOP_ID = #{shopId}
+					  AND TC.STE_ID = #{steId}
+					  AND TC.SALE_DT = #{salesDt}
+				    UNION ALL
+				    --외상
+				    SELECT
+				        'ONCRDT'                AS PAYMENT
+				        ,CO_ID
+				        ,SHOP_ID
+				        ,STE_ID
+				        ,SALE_DT
+				        ,POS_NO
+				        ,TRAN_NO
+				        ,SEQ
+				        ,NULL                   AS CARD_TYPE_CD
+				        ,SALE_DT || '000000'    AS APP_DT
+				        ,PAY_AMT                AS SALE_AMT
+				        ,PAY_AMT                AS TAXBLE_AMT
+				        ,CEIL(PAY_AMT::FLOAT / 11) AS VAT_AMT
+				        ,0                      AS TEXFREE_AMT
+				        ,NULL                   AS TID
+				        ,NULL                   AS CARD_NO
+				        ,NULL                   AS CARD_TP
+				        ,NULL                   AS APPR_NO
+				        ,NULL                   AS STORE_ID
+				        ,NULL                   AS PUR_CORP_CD
+				        ,NULL                   AS PAY_TP
+				        ,CUST_ID
+				    FROM fscps.TR_TRADE_ACC_RECV TTAR
+				    WHERE 1=1
+				      AND CO_ID = #{coId}
+					  AND SHOP_ID = #{shopId}
+					  AND STE_ID = #{steId}
+					  AND SALE_DT = #{salesDt}
+				    UNION ALL
+				    --간편결재
+				    SELECT
+				        CASE WHEN TPSE.PAY_TP = 'N' then 'CARD'
+				             ELSE                   'ONCRDT'
+				        END                              AS PAYMENT
+				        ,TPSE.CO_ID
+				        ,TPSE.SHOP_ID
+				        ,TPSE.STE_ID
+				        ,TPSE.SALE_DT
+				        ,TPSE.POS_NO
+				        ,TPSE.TRAN_NO
+				        ,TPSE.SEQ
+				        ,NULL                            AS CARD_TYPE_CD
+				        ,TPSE.APP_DT
+				        ,TPSE.SALE_AMT
+				        ,TPSE.SALE_AMT                   AS TAXBLE_AMT
+				        ,CEIL(TPSE.SALE_AMT::FLOAT / 11) AS VAT_AMT
+				        ,TPSE.TEXFREE_AMT
+				        ,TPSE.TID
+				        ,TPSE.BARCODE_NO                 AS CARD_NO
+				        ,NULL                            AS CARD_TP
+				        ,TPSE.APPR_NO
+				        ,TPSE.STORE_ID
+				        ,T.sap_crdco_cd                  AS PUR_CORP_CD
+				        --,(SELECT sap_crdco_cd
+				        --  FROM fwsafsd.tcbom004 t
+				        --  WHERE t.co_id            = TPSE.co_id
+				        --    and t.shp_id           = TPSE.shop_id
+				        --    and t.mchn_id          = TPSE.tid
+  				        --    and t.crdt_crd_ack_no  = TPSE.appr_no
+				        --    and t.crdt_crd_ack_ymd = substring(TPSE.app_dt, 1, 8)
+				        --    and t.crdt_crd_ack_hms = substring(TPSE.app_dt, 9, 6)
+				        --    and case when t.crdt_crd_ack_cl_cd = 'S' then TH.deal_type = '0' else '1' end
+				        --)                       AS PUR_CORP_CD
+				        ,TPSE.PAY_TP 	--결제타입 (일반신용결제 : N,  머니결제 : M, 계좌결제 : A)
+				        ,CASE WHEN TPSE.PAY_TP = 'N' THEN NULL
+				              ELSE                   TPSE.PUR_CORP_CD
+				         END AS CUST_ID
+				    FROM fscps.TR_PAY_SALES_EASY TPSE
+				    INNER JOIN fscps.TR_HEADER TH
+				       on TH.co_id   = TPSE.co_id
+				      and TH.shop_id = TPSE.shop_id
+				      and TH.ste_id  = TPSE.ste_id
+				      and TH.pos_no  = TPSE.pos_no
+				      and TH.tran_no = TPSE.tran_no
+				      and TH.sale_dt = TPSE.sale_dt
+				    LEFT OUTER JOIN T004 T
+				       on T.co_id    = TPSE.co_id
+				      and T.shp_id   = TPSE.shop_id
+				      and T.mchn_id  = TPSE.tid
+				      and t.crdt_crd_ack_no  = TPSE.appr_no
+				      and t.crdt_crd_ack_ymd = substring(TPSE.app_dt, 1, 8)
+				      and t.crdt_crd_ack_hms = substring(TPSE.app_dt, 9, 6)
+				      and t.crdt_crd_ack_at = TPSE.sale_amt -- 조인조건에 금액도 추가
+				      and case when t.crdt_crd_ack_cl_cd = 'S' then TH.deal_type = '0' else '1' end
+				    WHERE 1=1
+				      AND TPSE.CO_ID    = #{coId}
+					  AND TPSE.SHOP_ID  = #{shopId}
+					  AND TPSE.STE_ID   = #{steId}
+					  AND TPSE.SALE_DT  = #{salesDt}
+					  AND EASY_PAY_TYPE_CD || PAY_TP NOT IN ('03M', '06M', '07M')
+
+				 ) D ON D.CO_ID    = P.CO_ID
+					AND D.SHOP_ID  = P.SHOP_ID
+					AND D.STE_ID   = P.STE_ID
+					AND D.SALE_DT  = P.SALE_DT
+					AND D.POS_NO   = P.POS_NO
+					AND D.TRAN_NO  = P.TRAN_NO
+					AND D.SEQ      = P.SEQ
+				LEFT OUTER JOIN fscps.BS_CUST_M_IF C
+				     ON C.CO_ID    = D.CO_ID
+					AND C.CUST_ID  = D.CUST_ID
+				WHERE H.CO_ID      = #{coId}
+				  AND H.SHOP_ID    = #{shopId}
+				  AND H.STE_ID     = #{steId}
+				  AND H.SALE_DT    = #{salesDt}
+				  AND H.DEAL_TYPE  = '0'
+				  AND H.DEAL_MODE  = '01'
+				GROUP BY D.CO_ID, D.SHOP_ID, D.STE_ID, D.SALE_DT, D.POS_NO, D.TRAN_NO, D.APP_DT, D.PUR_CORP_CD, D.CARD_NO, D.APPR_NO, D.PAYMENT, D.CUST_ID, D.PAY_TP, H.DEAL_SECT
+			) M
+
+			GROUP BY M.CO_ID
+				, M.SHOP_ID
+				, M.STE_ID
+				, M.SALE_DT
+				, M.SALES_VAT_SEQ
+				, M.CUST_ID
+				, M.MNY_DMD_DT
+				, M.PROF_DT
+				, M.PLNT_CD
+				, M.SALES_REG_CL_CD
+				, M.DUTYF_DIV_CD
+				, M.BLNC_CL_CD
+				, M.RPRS_GD_NO
+				, M.CRDCO_CD
+				, M.FNC_SND_YN
+				, M.DDL_YN
+				, M.CFM_YN
+				, M.DEL_YN
+				, M.DMDPLC_ID
+				, M.PYPLC_ID
+				, M.APPR_NO
+				, M.PAYMENT
+				, M.PAY_TP
+				, M.DEAL_SECT
+	</insert>
+	<update id="deletePosSales" parameterType="com.cj.freshway.fs.cps.closing.closingmng.dto.PosSalesRegDto">
+		UPDATE /* com.cj.freshway.fs.cps.closing.closingmng.PosSalesRegMapper.deletePosSales(PosSalesRegDto)[POS매출등록 삭제] */
+		fscps.SA_CLOSING_DAILY_SALES_M
+		SET
+			DEL_YN = 'Y'
+		WHERE 1=1
+		  AND CO_ID       = #{coId}
+		  AND SHOP_ID     = #{shopId}
+		  AND STE_ID      = #{steId}
+		  AND SALES_DT    = #{salesDt}
+		  AND DEL_YN      = 'N'
+	</update>
+	<insert id="insertPosGdoh" parameterType="com.cj.freshway.fs.cps.closing.closingmng.dto.PosSalesRegDto">
+	    WITH W_REQ_LIST AS
+	    (
+			SELECT COALESCE(
+								   MAX(ABS(CAST(NULLIF(GDOH_SLIP_NO, '') AS numeric))) FILTER (WHERE GDOH_SLIP_NO LIKE '-%'),
+								   0
+				   )::numeric AS SLIP_NO
+		    FROM	FSCPS.SA_CLOSING_GDOH_SUM_M
+		    WHERE	CO_ID   = #{coId}
+		    AND 	SHOP_ID = #{shopId}
+		    AND 	OCCR_DT = #{salesDt}
+	    )
+	    INSERT INTO fscps.SA_CLOSING_GDOH_SUM_M /* com.cj.freshway.fs.cps.closing.closingmng.PosSalesRegMapper.insertPosGdoh(PosSalesRegDto)[POS매출등록 시재 입력] */
+		( 	  CO_ID
+			, SHOP_ID
+			, MCHN_ID
+			, OCCR_DT
+			, GDOH_SLIP_NO
+			, SALES_GDOH_WACC_CD
+			, STE_ID
+			, CUST_ID
+			, CRDCO_CD
+			, GDOH_AMT
+			, SALES_GDOH_REG_CL_CD
+			, SAP_SND_STTS_CD
+			, CRT_TYPE_CD
+			, DEL_YN
+			, REG_DTTM
+			, REGR_ID
+			, UPDT_DTTM
+			, UPDT_ID)
+		SELECT
+		  	  CO_ID
+			, SHOP_ID
+			, TID
+			, SALE_DT
+			, GDOH_SLIP_NO
+			, SALES_GDOH_WACC_CD
+			, STE_ID
+			, CUST_ID
+			, PUR_CORP_CD
+			, SALE_AMT
+			, SALES_GDOH_REG_CL_CD
+			, SAP_SND_STTS_CD
+			, CRT_TYPE_CD
+			, DEL_YN
+			, REG_DTTM
+			, REGR_ID
+			, UPDT_DTTM
+			, UPDT_ID
+		FROM (
+			SELECT
+				  M.CO_ID
+				, M.SHOP_ID
+				, M.TID
+				, M.SALE_DT
+				, '-' || LPAD(((ROW_NUMBER() OVER()) + (SELECT SLIP_NO FROM W_REQ_LIST))::varchar, 6, '0') AS GDOH_SLIP_NO
+				, M.SALES_GDOH_WACC_CD
+				, M.STE_ID
+				, CASE WHEN M.SALES_GDOH_WACC_CD IN ('311','312') THEN COALESCE(M.CUST_ID, M.STE_ID) ELSE M.CUST_ID END CUST_ID
+				, M.PUR_CORP_CD
+				, SUM(SALE_AMT) AS SALE_AMT
+				, '2'           AS SALES_GDOH_REG_CL_CD
+				, '2'           AS SAP_SND_STTS_CD
+				, 'S'           AS CRT_TYPE_CD
+				, 'N'           AS DEL_YN
+				, now()         AS REG_DTTM
+				, #{userId}     AS REGR_ID
+				, now()         AS UPDT_DTTM
+				, #{userId}     AS UPDT_ID
+			FROM (
+				SELECT
+				  	 D.CO_ID                          --회사ID
+					, D.SHOP_ID                       --점포ID
+					, D.STE_ID                        --사이트ID
+					, D.SALE_DT                       --매출일자
+					, CASE WHEN D.PAYMENT = 'CASH' THEN '311'
+					       WHEN D.payment = 'CARD' and H.deal_sect = '0' THEN '313'
+					       WHEN D.payment = 'CARD' and H.deal_sect = '1' THEN '314'
+				           ELSE D.payment
+				      END AS SALES_GDOH_WACC_CD
+				    , D.CUST_ID
+				    , D.PUR_CORP_CD
+				    , D.TID
+				    , CASE
+					       WHEN D.PAYMENT = 'CASH' and H.deal_sect = '1' THEN SUM(D.SALE_AMT) * -1
+				           ELSE SUM(D.SALE_AMT)
+				      END AS SALE_AMT
+				FROM fscps.TR_HEADER H
+				INNER JOIN fscps.TR_PAY P
+				     ON P.CO_ID  = H.CO_ID
+					AND P.SHOP_ID  = H.SHOP_ID
+					AND P.STE_ID  = H.STE_ID
+					AND P.SALE_DT  = H.SALE_DT
+					AND P.POS_NO = H.POS_NO
+					AND P.TRAN_NO  = H.TRAN_NO
+				INNER JOIN (
+				    --현금 (원화 + 외화)
+				    SELECT
+				         'CASH'                 AS PAYMENT
+				        ,CO_ID
+				        ,SHOP_ID
+				        ,STE_ID
+				        ,SALE_DT
+				        ,POS_NO
+				        ,TRAN_NO
+				        ,SEQ
+				        ,NULL                   AS CARD_TYPE_CD
+				        ,SALE_DT || '000000'    AS APP_DT
+				        ,PAY_AMT                AS SALE_AMT
+				        ,PAY_AMT                AS TAXBLE_AMT
+				        ,PAY_AMT - FLOOR(PAY_AMT::FLOAT / 11 * 10) AS VAT_AMT
+				        ,0                      AS TEXFREE_AMT
+				        ,''                     AS TID
+				        ,NULL                   AS CARD_NO
+				        ,NULL                   AS CARD_TP
+				        ,NULL                   AS APPR_NO
+				        ,NULL                   AS STORE_ID
+				        ,NULL                   AS PUR_CORP_CD
+				        ,NULL                   AS PAY_TP
+				        ,NULL                   AS CUST_ID
+				    FROM fscps.TR_CASH TC
+				    WHERE 1=1
+				      AND CO_ID = #{coId}
+					  AND SHOP_ID = #{shopId}
+					  AND STE_ID = #{steId}
+					  AND SALE_DT = #{salesDt}
+				    UNION ALL
+				    SELECT
+				        'CASH'                  AS PAYMENT
+				        ,CO_ID
+				        ,SHOP_ID
+				        ,STE_ID
+				        ,SALE_DT
+				        ,POS_NO
+				        ,TRAN_NO
+				        ,SEQ
+				        ,NULL                   AS CARD_TYPE_CD
+				        ,SALE_DT || '000000'    AS APP_DT
+				        ,PAY_AMT                AS SALE_AMT
+				        ,PAY_AMT                AS TAXBLE_AMT
+				        ,PAY_AMT - FLOOR(PAY_AMT::FLOAT / 11 * 10) AS VAT_AMT
+				        ,0                      AS TEXFREE_AMT
+				        ,''                     AS TID
+				        ,NULL                   AS CARD_NO
+				        ,NULL                   AS CARD_TP
+				        ,NULL                   AS APPR_NO
+				        ,NULL                   AS STORE_ID
+				        ,NULL                   AS PUR_CORP_CD
+				        ,NULL                   AS PAY_TP
+				        ,NULL                   AS CUST_ID
+				    FROM fscps.TR_FRGEXCHG TF
+				    WHERE 1=1
+				      AND CO_ID = #{coId}
+					  AND SHOP_ID = #{shopId}
+					  AND STE_ID = #{steId}
+					  AND SALE_DT = #{salesDt}
+				 ) D ON D.CO_ID    = P.CO_ID
+					AND D.SHOP_ID  = P.SHOP_ID
+					AND D.STE_ID   = P.STE_ID
+					AND D.SALE_DT  = P.SALE_DT
+					AND D.POS_NO   = P.POS_NO
+					AND D.TRAN_NO  = P.TRAN_NO
+					AND D.SEQ      = P.SEQ
+				WHERE H.CO_ID      = #{coId}
+				  AND H.SHOP_ID    = #{shopId}
+				  AND H.STE_ID     = #{steId}
+				  AND H.SALE_DT    = #{salesDt}
+				  AND H.DEAL_TYPE  = '0'
+				  AND H.DEAL_MODE  = '01'
+				GROUP BY D.CO_ID, D.SHOP_ID, D.STE_ID, D.SALE_DT, D.PAYMENT, H.DEAL_SECT, D.PUR_CORP_CD, D.CUST_ID, D.TID
+				UNION ALL
+				--신용카드
+			    SELECT
+					T04.CO_ID,
+					T04.SHP_ID             AS SHOP_ID,
+					BVM.STE_ID,
+					T04.CRDT_CRD_ACK_YMD   AS SALE_DT,
+					CASE WHEN CRDT_CRD_ACK_CL_CD = 'S' THEN '313'
+				       WHEN CRDT_CRD_ACK_CL_CD = 'H' THEN '314'
+			           ELSE CRDT_CRD_ACK_CL_CD
+				      END AS SALES_GDOH_WACC_CD,
+					NULL                   AS CUST_ID,
+					T04.SAP_CRDCO_CD       AS PUR_CORP_CD,
+					T04.MCHN_ID            AS TID,
+					T04.CRDT_CRD_ACK_AT    AS SALE_AMT
+				FROM fwsafsd.TCBOM004 T04
+				INNER JOIN fscps.BS_VAN_M BVM
+				  ON  BVM.CO_ID     = T04.CO_ID
+				  AND BVM.SHOP_ID   = T04.SHP_ID
+				  AND BVM.TRMNL_ID	= T04.MCHN_ID
+				  AND BVM.CO_ID   	= #{coId}
+				  AND BVM.SHOP_ID 	= #{shopId}
+				  AND BVM.STE_ID 	= #{steId}
+				  AND T04.CRDT_CRD_ACK_YMD = #{salesDt}
+				  AND BVM.VAN_CMP_ID NOT IN (
+							SELECT COMM_CD FROM FSCPS.CM_CODE_M_IF
+							WHERE COMM_CL_CD = 'FP076'
+							  AND CHARTR_REF1 = 'Y'
+							)
+			) M
+
+			GROUP BY CO_ID, SHOP_ID, STE_ID, SALE_DT, SALES_GDOH_WACC_CD, CUST_ID, PUR_CORP_CD, TID
+		) A
+
+		WHERE NOT (SALES_GDOH_WACC_CD IN ('311', '312') AND SALE_AMT = 0)
+
+	</insert>
+	<!-- deprecated -->
+	<delete id="deletePosGdoh" parameterType="com.cj.freshway.fs.cps.closing.closingmng.dto.PosSalesRegDto">
+		DELETE /* com.cj.freshway.fs.cps.closing.closingmng.PosSalesRegMapper.deletePosGdoh(PosSalesRegDto)[POS매출등록 시재 삭제] */
+		FROM fscps.SA_CLOSING_GDOH_SUM_M
+		WHERE 1 = 1
+		  AND CO_ID = #{coId}
+		  AND SHOP_ID = #{shopId}
+		  AND STE_ID = #{steId}
+		  AND OCCR_DT = #{salesDt}
+	</delete>
+	<select id="selectCloseYn" parameterType="com.cj.freshway.fs.cps.closing.closingmng.dto.PosSalesRegDto" resultType="com.cj.freshway.fs.cps.closing.closingmng.entity.PosSalesRegEntity">
+		<!--SELECT /* com.cj.freshway.fs.cps.closing.closingmng.PosSalesRegMapper.selectCloseYn(PosSalesRegDto)[POS매출등록 마감여부 조회] */
+			A.MNG_YN, B.SALES_DDL_YN
+		FROM fwsafsd.TFMCL004 A
+		JOIN fwsafsd.TFMCL013 B
+		ON A.CO_ID = B.CO_ID AND A.SITE_ID = B.SITE_ID AND A.CRT_YMD = B.CRT_YMD
+		WHERE 1 = 1
+		  AND A.CO_ID = #{coId}
+	      AND A.SITE_ID = #{steId}
+	      AND A.CRT_YMD = #{salesDt}-->
+	    SELECT /* com.cj.freshway.fs.cps.closing.closingmng.PosSalesRegMapper.selectCloseYn(PosSalesRegDto)[POS매출등록 마감여부 조회] */
+			A.MNG_YN, B.SALES_DDL_YN, CASE WHEN C.SALES_DDL_YN = '1' THEN 'Y' ELSE 'N' END MONTH_SALES_DDL_YN
+		FROM fwsafsd.TFMCL004 A
+		LEFT OUTER JOIN fwsafsd.TFMCL013 B
+		ON A.CO_ID = B.CO_ID AND A.SITE_ID = B.SITE_ID AND A.CRT_YMD = B.CRT_YMD
+		LEFT OUTER JOIN fwsafsd.TFMCL015 C
+		ON A.CO_ID = C.CO_ID AND A.SITE_ID = C.SITE_ID AND substring(A.CRT_YMD, 0, 7)  = C.CRT_YYYYMM
+		WHERE 1 = 1
+		  AND A.CO_ID = #{coId}
+	      AND A.SITE_ID = #{steId}
+	      AND A.CRT_YMD = #{salesDt}
+	    LIMIT 1
+	</select>
+	<select id="selectTaxBilYn" parameterType="com.cj.freshway.fs.cps.closing.closingmng.dto.PosSalesRegDto" resultType="com.cj.freshway.fs.cps.closing.closingmng.entity.PosSalesRegEntity">
+		SELECT /* com.cj.freshway.fs.cps.closing.closingmng.PosSalesRegMapper.selectTaxBilYn(PosSalesRegDto)[POS매출등록 세금계산서발행여부 조회] */
+			CASE WHEN COUNT(*) = 0 THEN 'N' ELSE 'Y' END AS TAX_BIL_YN FROM fwsafsd.TFMCL006
+		WHERE 1 = 1
+		  AND CO_ID = #{coId}
+		  AND SITE_ID = #{steId}
+		  AND SALES_YMD = #{salesDt}
+		  AND BLNC_CL_CD = '21'
+	      AND TAX_BIL_PBL_NO IS NOT NULL
+	      AND SALES_REG_CL_CD <![CDATA[<>]]> 'A0' /*폐유 매출 제외 처리 2025.06.16 ADD*/
+		  AND DEL_YN = '0'
+	</select>
+	<select id="selectSaleLogCnt" parameterType="com.cj.freshway.fs.cps.closing.closingmng.dto.PosSalesRegDto" resultType="com.cj.freshway.fs.cps.closing.closingmng.entity.PosSalesRegEntity">
+		SELECT /* com.cj.freshway.fs.cps.closing.closingmng.PosSalesRegMapper.selectSaleLogCnt(PosSalesRegDto)[POS매출등록 매출미집계건 조회] */
+			SUM(CNT) salesLogCnt FROM (
+		SELECT
+			COUNT(1) CNT
+		FROM fscps.TR_LOG_TRAN
+		WHERE CO_ID = #{coId}
+		  AND SHOP_ID = (SELECT SHOP_ID FROM fscps.BS_STE_M_IF BSMI WHERE CO_ID = #{coId} AND STE_ID = #{steId})
+		  AND STE_ID = #{steId}
+		  AND SALE_DT = #{salesDt}
+		  AND PROC_TP <![CDATA[<>]]> '1'
+		UNION ALL
+		SELECT
+			COUNT(1) CNT
+		FROM fscps.TR_HEADER
+		WHERE CO_ID = #{coId}
+		  AND SHOP_ID = (SELECT SHOP_ID FROM fscps.BS_STE_M_IF BSMI WHERE CO_ID = #{coId} AND STE_ID = #{steId})
+		  AND STE_ID = #{steId}
+		  AND SALE_DT = #{salesDt}
+		  AND SUBTOTAL_YN <![CDATA[<>]]> '1'
+		) A
+	</select>
+	<select id="selectOncrdtCustCnt" parameterType="com.cj.freshway.fs.cps.closing.closingmng.dto.PosSalesRegDto" resultType="com.cj.freshway.fs.cps.closing.closingmng.entity.PosSalesRegEntity">
+	    SELECT /* com.cj.freshway.fs.cps.closing.closingmng.PosSalesRegMapper.selectOncrdtCustCnt(PosSalesRegDto)[POS매출등록 외상고객없는건 조회] */
+	    	COUNT(*) oncrdtCustCnt from fscps.SA_PAY_SALES_ONCRDT_S
+		WHERE CO_ID = #{coId}
+		  AND SALES_DT = #{salesDt}
+		  AND SHOP_ID = (SELECT SHOP_ID FROM fscps.BS_STE_M_IF BSMI WHERE CO_ID = #{coId} AND STE_ID = #{steId})
+		  AND STE_ID = #{steId}
+		  AND (CUST_ID IS NULL OR CUST_ID = '')
+	</select>
+	<insert id="insertDelTFMCL006" parameterType="com.cj.freshway.fs.cps.closing.closingmng.dto.PosSalesRegDto">
+		INSERT INTO fwsafsd.TFMCL006 /* com.cj.freshway.fs.cps.closing.closingmng.PosSalesRegMapper.insertDelTFMCL006(PosSalesRegDto)[POS매출등록 I-Fresh 테이블 등록] */
+		(CO_ID, SITE_ID, SALES_YMD, SALES_SEQ, SALES_VAT_SEQ, CUST_ID, MNY_DMD_YMD, PROF_DD, PLNT_CD, SALES_REG_CL_CD, DUTYF_DIV_CD, TAX_BIL_PBL_YN, BLNC_CL_CD, RPRS_GD_NO, TOT_SALES_AT, NET_SALES_AT, VAT_AT
+		, FNC_SND_YN, DDL_YN, CFM_YN, DEL_YN
+		, BILI_DOC_NO, FS_MNG_NO, BF_BILI_DOC_NO
+		, DMDPLC_ID, PYPLC_ID, REG_DT, REGR_ID, UPD_DT, UPDR_ID)
+		SELECT
+		 CO_ID, STE_ID, SALES_DT, SALES_SEQ, SALES_VAT_SEQ, CUST_ID, MNY_DMD_DT, PROF_DT, PLNT_CD, SALES_REG_CL_CD, DUTYF_DIV_CD, CASE WHEN TAX_BIL_PBL_YN = 'Y' THEN '1' ELSE '0' END TAX_BIL_PBL_YN, BLNC_CL_CD, RPRS_GD_NO, TOT_SALES_AMT, NET_SALES_AMT, VAT_AMT
+		, '0' FNC_SND_YN, '1' DDL_YN, '0' CFM_YN, '1' DEL_YN
+		, '' BILI_DOC_NO, FS_MNG_NO, BF_BILI_DOC_NO
+		, DMDPLC_ID, PYPLC_ID, REG_DTTM, REGR_ID, UPDT_DTTM, UPDT_ID
+		FROM fscps.SA_CLOSING_DAILY_SALES_M
+		WHERE 1 = 1
+		  AND CO_ID = #{coId}
+		  AND SHOP_ID = (SELECT SHOP_ID FROM fscps.BS_STE_M_IF BSMI WHERE CO_ID = #{coId} AND STE_ID = #{steId})
+		  AND STE_ID = #{steId}
+		  AND SALES_DT = #{salesDt}
+		  AND DEL_YN = 'N'
+		  AND BF_SALES_SEQ IS NOT NULL
+	</insert>
+	<insert id="insertTFMCL006" parameterType="com.cj.freshway.fs.cps.closing.closingmng.dto.PosSalesRegDto">
+		INSERT INTO fwsafsd.TFMCL006 /* com.cj.freshway.fs.cps.closing.closingmng.PosSalesRegMapper.insertTFMCL006(PosSalesRegDto)[POS매출등록 I-Fresh 테이블 등록] */
+		(CO_ID, SITE_ID, SALES_YMD, SALES_SEQ, SALES_VAT_SEQ, CUST_ID, MNY_DMD_YMD, PROF_DD, PLNT_CD, SALES_REG_CL_CD, DUTYF_DIV_CD, TAX_BIL_PBL_YN, BLNC_CL_CD, RPRS_GD_NO, TOT_SALES_AT, NET_SALES_AT, VAT_AT
+		, FNC_SND_YN, FS_MNG_NO, DDL_YN, CFM_YN, DEL_YN, DMDPLC_ID, PYPLC_ID, REG_DT, REGR_ID, UPD_DT, UPDR_ID)
+		SELECT
+		 CO_ID, STE_ID, SALES_DT, SALES_SEQ, SALES_VAT_SEQ, CUST_ID, MNY_DMD_DT, PROF_DT, PLNT_CD, SALES_REG_CL_CD, DUTYF_DIV_CD, CASE WHEN TAX_BIL_PBL_YN = 'Y' THEN '1' ELSE '0' END TAX_BIL_PBL_YN, BLNC_CL_CD, RPRS_GD_NO, TOT_SALES_AMT, NET_SALES_AMT, VAT_AMT
+		, '0' FNC_SND_YN, FS_MNG_NO, '1' DDL_YN, '0' CFM_YN, '0' DEL_YN
+		, DMDPLC_ID, PYPLC_ID, REG_DTTM, REGR_ID, UPDT_DTTM, UPDT_ID
+		FROM fscps.SA_CLOSING_DAILY_SALES_M
+		WHERE 1 = 1
+		  AND CO_ID = #{coId}
+		  AND SHOP_ID = (SELECT SHOP_ID FROM fscps.BS_STE_M_IF BSMI WHERE CO_ID = #{coId} AND STE_ID = #{steId})
+		  AND STE_ID = #{steId}
+		  AND SALES_DT = #{salesDt}
+		  AND DEL_YN = 'N'
+	</insert>
+	<!--<insert id="insertReverseTFMCL006" parameterType="com.cj.freshway.fs.cps.closing.closingmng.dto.PosSalesRegDto">
+		INSERT INTO fwsafsd.TFMCL006
+		(
+			CO_ID, SITE_ID, SALES_YMD, SALES_SEQ,
+			SALES_VAT_SEQ, CUST_ID, MNY_DMD_YMD, PROF_DD,
+			PLNT_CD, MEAL_CD, CRNR_ID, MLTKT_KOT_ID, TAX_BIL_PBL_YN, TAX_BIL_PBL_NO, SALES_REG_CL_CD,
+			DUTYF_DIV_CD, BLNC_CL_CD, MLTKT_CL_CD, RPRS_GD_NO, SALES_MLCNT, SALE_UNPRC,
+			TOT_SALES_AT, NET_SALES_AT, VAT_AT,
+			CRDT_CRD_STTL_YMD, CRDT_CRD_STTL_HMS, CRDCO_CD , CRDT_CRD_ACK_NO , CRDT_CRD_STTL_AT , MCHN_NO , MBST_NO , FNC_SND_YN , BILI_DOC_NO , FS_MNG_NO ,
+			BF_BILI_DOC_NO ,
+			DDL_YN , CFM_YN , DEL_YN , NORM_ADJ_YN , REG_DT , REGR_ID , UPD_DT , UPDR_ID , SAP_ERR_YN , GDOH_SLIP_NO ,
+			SALES_ADJ_CNFR_NO , DMDPLC_ID , PYPLC_ID , ORDR_CL_CD , SAP_ORDR_NO
+		)
+		SELECT
+			CO_ID, SITE_ID, SALES_YMD,
+			(SELECT COALESCE(MAX(SALES_SEQ), 1) FROM fwsafsd.TFMCL006 WHERE CO_ID =#{coId} AND SITE_ID =#{steId} AND SALES_YMD=#{salesDt}) + SALES_SEQ AS SALES_SEQ,
+			SALES_VAT_SEQ, CUST_ID, MNY_DMD_YMD, PROF_DD,
+			PLNT_CD, MEAL_CD, CRNR_ID, MLTKT_KOT_ID, TAX_BIL_PBL_YN, TAX_BIL_PBL_NO, SALES_REG_CL_CD,
+			DUTYF_DIV_CD, BLNC_CL_CD, MLTKT_CL_CD, RPRS_GD_NO, SALES_MLCNT, SALE_UNPRC,
+			(TOT_SALES_AT * -1) TOT_SALES_AT, (NET_SALES_AT * -1)  NET_SALES_AT, (VAT_AT * -1)  VAT_AT,
+			CRDT_CRD_STTL_YMD, CRDT_CRD_STTL_HMS, CRDCO_CD, CRDT_CRD_ACK_NO, CRDT_CRD_STTL_AT, MCHN_NO, MBST_NO, FNC_SND_YN, '' BILI_DOC_NO, FS_MNG_NO,
+			BILI_DOC_NO AS BF_BILI_DOC_NO,
+			DDL_YN, CFM_YN, '1' DEL_YN, NORM_ADJ_YN, REG_DT, REGR_ID, NOW() ,#{userId} ,SAP_ERR_YN ,GDOH_SLIP_NO,
+			SALES_ADJ_CNFR_NO, DMDPLC_ID, PYPLC_ID, ORDR_CL_CD, SAP_ORDR_NO
+		FROM fwsafsd.TFMCL006
+		WHERE 1=1
+		  AND CO_ID =#{coId}
+		  AND SITE_ID =#{steId}
+		  AND SALES_YMD=#{salesDt}
+		  AND DEL_YN = '0'
+	</insert>-->
+	<delete id="deleteTIFMCL006" parameterType="com.cj.freshway.fs.cps.closing.closingmng.dto.PosSalesRegDto">
+		DELETE /* com.cj.freshway.fs.cps.closing.closingmng.PosSalesRegMapper.deleteTIFMCL006(PosSalesRegDto)[POS매출등록 I-Fresh 테이블 삭제] */
+		FROM fwsafsd.TIFMCL006
+         WHERE 1=1
+           AND SITE_ID     = #{steId}
+           AND SEQ IN (
+           	SELECT FS_MNG_NO::numeric
+			from fwsafsd.TFMCL006
+	         WHERE CO_ID       = #{coId}
+	           AND SITE_ID     = #{steId}
+	           AND SALES_YMD   = #{salesDt}
+           )
+	</delete>
+	<update id="deleteTFMCL006" parameterType="com.cj.freshway.fs.cps.closing.closingmng.dto.PosSalesRegDto">
+		UPDATE fwsafsd.TFMCL006
+		SET
+			DEL_YN = '1'
+		WHERE 1=1
+		AND CO_ID     = #{coId}
+		AND SITE_ID   = #{steId}
+		AND SALES_YMD = #{salesDt}
+		and sales_seq in (select sales_seq From fscps.SA_CLOSING_DAILY_SALES_M where co_id= #{coId} and ste_id= #{steId} and sales_dt = #{salesDt}) -- 통합결제에서 등록한 매출만 지정
+		AND DEL_YN    = '0'
+	</update>
+	<insert id="insertReversePosSales" parameterType="com.cj.freshway.fs.cps.closing.closingmng.dto.PosSalesRegDto">
+		INSERT INTO fscps.SA_CLOSING_DAILY_SALES_M
+		(
+			CO_ID, SHOP_ID, STE_ID, SALES_DT, SALES_SEQ,
+			SALES_VAT_SEQ, BF_SALES_SEQ, CUST_ID, MNY_DMD_DT, PROF_DT,
+			PLNT_CD, MEAL_CD, CRNR_ID, MLTKT_KOT_ID, tax_bil_pbl_yn, TAX_BIL_PBL_NO, SALES_REG_CL_CD,
+			DUTYF_DIV_CD, BLNC_CL_CD, MLTKT_CL_CD, RPRS_GD_NO, SALES_MLCNT, SALE_UNPRC,
+			TOT_SALES_AMT, NET_SALES_AMT, VAT_AMT,
+			CRDT_CRD_STTL_YMD, CRDT_CRD_STTL_HMS, CRDCO_CD , CRDT_CRD_AC_YMD , CRDT_CRD_STTL_AMT , MCHN_NO , MBST_NO , FNC_SND_YN , BILI_DOC_NO ,
+			FS_MNG_NO ,
+			BF_BILI_DOC_NO,
+			DDL_YN , CFM_YN , DEL_YN , NORM_ADJ_YN , REG_DTTM , REGR_ID , UPDT_DTTM , UPDT_ID , GDOH_SLIP_NO ,
+			SALES_ADJ_CNFR_NO , DMDPLC_ID , PYPLC_ID , ORDR_CL_CD , SAP_ORDR_NO
+		)
+		SELECT
+			CO_ID, SHOP_ID, STE_ID, SALES_DT,
+			(SELECT COALESCE(MAX(SALES_SEQ), 0) FROM TFMCL006 WHERE CO_ID =#{coId} AND SITE_ID =#{steId} AND SALES_YMD=#{salesDt}) + ( row_number() over () ) AS SALES_SEQ,
+			SALES_VAT_SEQ, SALES_SEQ AS BF_SALES_SEQ, CUST_ID, MNY_DMD_DT, PROF_DT,
+			PLNT_CD, MEAL_CD, CRNR_ID, MLTKT_KOT_ID, tax_bil_pbl_yn, TAX_BIL_PBL_NO, SALES_REG_CL_CD,
+			DUTYF_DIV_CD, BLNC_CL_CD, MLTKT_CL_CD, RPRS_GD_NO, SALES_MLCNT, SALE_UNPRC,
+			(TOT_SALES_AMT * -1) TOT_SALES_AMT, (NET_SALES_AMT * -1)  NET_SALES_AMT, (VAT_AMT * -1)  VAT_AMT,
+			CRDT_CRD_STTL_YMD, CRDT_CRD_STTL_HMS, CRDCO_CD , CRDT_CRD_AC_YMD , CRDT_CRD_STTL_AMT , MCHN_NO , MBST_NO , FNC_SND_YN , '' BILI_DOC_NO ,
+			LPAD(nextval('fwsafsd.sq_tfmcl006_01')::TEXT, 10, '0') FS_MNG_NO,
+			BILI_DOC_NO,
+			DDL_YN, CFM_YN, 'N' DEL_YN, NORM_ADJ_YN, NOW(), #{userId}, NOW() ,#{userId} ,GDOH_SLIP_NO,
+			SALES_ADJ_CNFR_NO, DMDPLC_ID, PYPLC_ID, ORDR_CL_CD, SAP_ORDR_NO
+		FROM fscps.SA_CLOSING_DAILY_SALES_M
+		WHERE 1=1
+		  AND CO_ID         = #{coId}
+		  AND SHOP_ID       = (SELECT SHOP_ID FROM fscps.BS_STE_M_IF BSMI WHERE CO_ID = #{coId} AND STE_ID = #{steId})
+		  AND STE_ID        = #{steId}
+		  AND SALES_DT      = #{salesDt}
+		  AND DEL_YN        = 'N'
+	</insert>
+	<insert id="insertOncrdtTaxPbl" parameterType="com.cj.freshway.fs.cps.closing.closingmng.dto.PosSalesRegDto">
+		INSERT INTO FSCPS.SA_ONCRDT_TAX_PBL_M
+		(
+			CO_ID
+			, SHOP_ID
+			, STE_ID
+			, SALES_DT
+			, CUST_ID
+			, DUTYF_DIV_CD
+			, REG_DTTM
+			, REGR_ID
+			, UPDT_DTTM
+			, UPDT_ID
+		)
+		VALUES
+		(
+			#{coId}
+			, #{shopId}
+			, #{steId}
+			, #{salesDt}
+			, #{custId}
+			, #{dutyfDivCd}
+			, now()
+			, #{userId}
+			, now()
+			, #{userId}
+		)
+		ON CONFLICT (CO_ID, SHOP_ID, STE_ID, SALES_DT, CUST_ID)
+		DO UPDATE SET DUTYF_DIV_CD = #{dutyfDivCd}, UPDT_DTTM = now(), UPDT_ID = #{userId}
+	</insert>
+	<select id="selectCancelRsnDescNullCnt" parameterType="com.cj.freshway.fs.cps.closing.closingmng.dto.PosSalesRegDto" resultType="Integer">
+	    SELECT /* com.cj.freshway.fs.cps.closing.closingmng.PosSalesRegMapper.selectCancelRsnDescNullCnt(PosSalesRegDto)[POS매출등록 취소사유미입력건] */
+	    	COUNT(1) cancelRsnDescNullCnt
+		 FROM fscps.TR_HEADER TH
+		 INNER JOIN fscps.TR_PAY TP
+		  ON TH.CO_ID   = TP.CO_ID
+		 AND TH.SHOP_ID = TP.SHOP_ID
+		 AND TH.STE_ID  = TP.STE_ID
+		 AND TH.SALE_DT = TP.SALE_DT
+		 AND TH.POS_NO  = TP.POS_NO
+		 AND TH.TRAN_NO = TP.TRAN_NO
+		 WHERE TH.CO_ID   = #{coId}
+		   AND TH.SHOP_ID = (SELECT SHOP_ID FROM fscps.BS_STE_M_IF BSMI WHERE CO_ID = #{coId} AND STE_ID = #{steId})
+		   AND TH.STE_ID  = #{steId}
+		   AND TH.SALE_DT = #{salesDt}
+		   AND TP.PAY_CD IN ('201', '202')
+		   AND TH.RSN_CD  = '99'
+		   AND TH.RSN_DESC IS NULL
+	</select>
+
+	<delete id="deletePosSalesSum" parameterType="com.cj.freshway.fs.cps.closing.closingmng.dto.PosSalesRegDto">
+		DELETE FROM FSCPS.SA_CPON_DC_SALES_S
+		WHERE CO_ID = #{coId} AND SALES_DT = #{salesDt} AND STE_ID = #{steId};
+		DELETE FROM FSCPS.SA_CRNR_MENU_SALES_S
+		WHERE CO_ID = #{coId} AND SALES_DT = #{salesDt} AND STE_ID = #{steId};
+		DELETE FROM FSCPS.SA_EMP_CUST_SALES_S
+		WHERE CO_ID = #{coId} AND SALES_DT = #{salesDt} AND STE_ID = #{steId};
+		DELETE FROM FSCPS.SA_PAY_SALES_CARD_S
+		WHERE CO_ID = #{coId} AND SALES_DT = #{salesDt} AND STE_ID = #{steId};
+		DELETE FROM FSCPS.SA_PAY_SALES_CASH_S
+		WHERE CO_ID = #{coId} AND SALES_DT = #{salesDt} AND STE_ID = #{steId};
+		DELETE FROM FSCPS.SA_PAY_SALES_EASY_S
+		WHERE CO_ID = #{coId} AND SALES_DT = #{salesDt} AND STE_ID = #{steId};
+		DELETE FROM FSCPS.SA_PAY_SALES_ONCRDT_S
+		WHERE CO_ID = #{coId} AND SALES_DT = #{salesDt} AND STE_ID = #{steId};
+		DELETE FROM FSCPS.SA_PAY_SALES_S
+		WHERE CO_ID = #{coId} AND SALES_DT = #{salesDt} AND STE_ID = #{steId};
+		DELETE FROM FSCPS.SA_PRMT_DC_MENU_SALES_S
+		WHERE CO_ID = #{coId} AND SALES_DT = #{salesDt} AND STE_ID = #{steId};
+		DELETE FROM FSCPS.SA_PRMT_DC_SUB_SALES_S
+		WHERE CO_ID = #{coId} AND SALES_DT = #{salesDt} AND STE_ID = #{steId};
+		DELETE FROM FSCPS.SA_STE_POS_SALES_S
+		WHERE CO_ID = #{coId} AND SALES_DT = #{salesDt} AND STE_ID = #{steId};
+		DELETE FROM FSCPS.SA_TIME_CRNR_MENU_SALES_S
+		WHERE CO_ID = #{coId} AND SALES_DT = #{salesDt} AND STE_ID = #{steId};
+		DELETE FROM FSCPS.SA_TIME_STE_SALES_S
+		WHERE CO_ID = #{coId} AND SALES_DT = #{salesDt} AND STE_ID = #{steId};
+
+		update TR_HEADER set
+		subtotal_yn ='0', regr_id = (select regr_id from fscps.tr_header where co_id = 'FW00' and regr_id is not null
+																			and regr_id != 'POSSVR' order by reg_dttm desc limit 1) -- 매출 재집계 불가 문제 수정
+		where co_id = #{coId} and sale_dt = #{salesDt} and ste_id = #{steId};
+	</delete>
+
+
+
+</mapper>

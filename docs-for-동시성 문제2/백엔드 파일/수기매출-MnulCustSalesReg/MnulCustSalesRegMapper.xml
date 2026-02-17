@@ -1,0 +1,1062 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.cj.freshway.fs.cps.closing.closingmng.MnulCustSalesRegMapper">
+	<!--
+	 * 수기매출등록 목록 조회
+	 * @author ParkHakmin
+	 * 2024.10.10
+	 -->
+	<select id="selectMnulCustSalesRegList" parameterType="com.cj.freshway.fs.cps.closing.closingmng.dto.MnulCustSalesRegSearchDto" resultType="com.cj.freshway.fs.cps.closing.closingmng.entity.MnulCustSalesRegEntity">
+		SELECT	/* com.cj.freshway.fs.cps.closing.closingmng.selectMnulCustSalesRegList */ 
+		    ROW_NUMBER() OVER (ORDER BY M.STE_ID, M.SALES_DT, M.SALES_SLIP_NO ASC) AS ROW_NUM
+		     , M.CO_ID
+		     , M.SHOP_ID
+		     , (SELECT SHOP_NM from fscps.BS_SHOP_M_IF WHERE SHOP_ID = M.SHOP_ID AND CO_ID = M.CO_ID) AS SHOP_NM
+		     , M.STE_ID
+		     , M.SALES_DT
+		     , M.SALES_SLIP_NO  
+		     , M.TRAN_NO  
+		     , M.POS_NO  
+		     , M.CUST_ID
+		     , CASE WHEN char_length(M.CUST_ID) = 4 THEN '00' 
+		       ELSE (SELECT C.CRED_PAY_TYPE_CD FROM fscps.BS_SHOP_CUST_M_IF C WHERE C.CO_ID = M.CO_ID AND C.SHOP_ID = M.SHOP_ID AND C.CUST_ID = M.CUST_ID) 
+		       END AS CRED_PAY_TYPE_CD
+		     , COALESCE(
+		        (SELECT CUST_NM FROM FSCPS.BS_CUST_M_IF WHERE CO_ID = #{coId} AND CUST_ID = M.CUST_ID 
+		      		 AND M.SHOP_ID IN (SELECT CC_CD FROM fscps.PG_CM_AUTH_I_FN_GET_SLBZ_ORG_PIPE(#{coId}, #{regrId}, null))),
+		     	(SELECT STE_NM FROM FSCPS.BS_STE_M_IF WHERE CO_ID = #{coId} AND STE_ID = M.CUST_ID 
+		      		 AND M.SHOP_ID IN (SELECT CC_CD FROM fscps.PG_CM_AUTH_I_FN_GET_SLBZ_ORG_PIPE(#{coId}, #{regrId}, null)))
+		       ) AS CUST_NM
+			 , COALESCE(M.TAX_CL_CD, '') AS TAX_CL_CD	
+			 , COALESCE(M.TAX_BIL_PBL_CL_CD, '') AS TAX_BIL_PBL_CL_CD	
+			 , COALESCE(M.SALES_BLNC_CL_CD, '') AS SALES_BLNC_CL_CD	
+		     , M.CNCL_YN
+		     , M.TOT_SALES_AMT
+		     , M.NET_SALES_AMT
+		     , M.VAT_AMT
+		     , M.MCHN_NO
+		     , M.CRDCO_CD
+		     , (SELECT COMM_CD_NM FROM fscps.CM_CODE_M_IF WHERE COMM_CL_CD = 'FP001' AND COMM_CD = M.CRDCO_CD) AS CRDCO_NM
+		     , M.CRDT_CRD_ACK_DT
+		     , M.CRDT_CRD_ACK_HMS
+		     , M.CRDT_CRD_ACK_NO
+		     , M.CRDT_CRD_ACK_CL_CD		     
+			 , (SELECT COMM_CD_NM FROM fscps.CM_CODE_M_IF WHERE COMM_CL_CD = 'FP118' AND COMM_CD = M.CRDT_CRD_ACK_CL_CD) AS CRDT_CRD_ACK_CL_NM	
+			 , M.CRDCO_MBST_NO
+		     , M.CRDT_CRD_CD
+		     , M.CRDT_CRD_ACK_AMT
+		     , M.IF_ID
+		     , M.SAP_ERR_YN
+		     , M.SAP_ERR_MSG
+		     , M.RSN_DESC
+		     , M.REGR_ID
+		     , M.REG_DTTM
+		     , M.UPDT_ID
+		     , M.UPDT_DTTM
+		FROM	FSCPS.SA_MNUL_SALES_M M
+		WHERE	1 = 1
+		AND		M.CO_ID         = #{coId}
+		AND		M.STE_ID        = #{steId}
+		AND		M.SALES_DT      = #{salesDt}
+		AND		M.REG_TYPE_CD   = '1'
+		<!-- AND		M.CNCL_YN       != 'Y' -->
+		AND		M.SALES_SLIP_NO NOT IN (
+					SELECT SALES_CNCL_ORI_SLIP_NO FROM FSCPS.SA_MNUL_SALES_M 
+						WHERE CNCL_YN = 'Y' 
+						  AND REG_TYPE_CD = '1' 
+						  AND CO_ID       = #{coId} 
+						  AND STE_ID      = #{steId} 
+						  AND SALES_DT    = #{salesDt})
+	  	ORDER BY
+	  			M.STE_ID
+			  , M.SALES_DT
+			  , M.SALES_SLIP_NO
+	</select>
+	
+	<select id="selectMnulCustSalesRegMonthCloseYn" parameterType="com.cj.freshway.fs.cps.closing.closingmng.dto.MnulCustSalesRegSearchDto" resultType="String">
+		SELECT /* com.cj.freshway.fs.cps.closing.closingmng.selectMnulCustSalesRegMonthCloseYn(MnulCustSalesRegSearchDto)[월마감여부 조회] --매출마감('1'이면 마감상태임)  */
+		  CASE WHEN SALES_DDL_YN = '1' THEN 'Y' ELSE 'N' END as CLOSE_YN       
+		  FROM fwsafsd.TFMCL015 
+		   WHERE 1 = 1
+		     AND CO_ID      = #{coId}
+		     AND SITE_ID     = #{steId}
+		     AND CRT_YYYYMM = SUBSTRING(#{salesDt}, 1, 6)
+	</select>
+	
+	<select id="selectMnulCustSalesRegDayCloseYn" parameterType="com.cj.freshway.fs.cps.closing.closingmng.dto.MnulCustSalesRegSearchDto" resultType="String">
+		SELECT /* com.cj.freshway.fs.cps.closing.closingmng.selectMnulCustSalesRegDayCloseYn(MnulCustSalesRegSearchDto)[일마감여부 조회] */
+			coalesce(A.MNG_YN, 'X') || ',' || coalesce(B.SALES_DDL_YN, 'X') as CLOSE_YN
+		FROM fwsafsd.TFMCL004 A
+		JOIN fwsafsd.TFMCL013 B
+		ON A.CO_ID = B.CO_ID AND A.SITE_ID = B.SITE_ID AND A.CRT_YMD = B.CRT_YMD 
+		WHERE 1 = 1
+		  AND A.CO_ID   = #{coId}
+	      AND A.SITE_ID = #{steId}
+	      AND A.CRT_YMD = #{salesDt}
+	</select>
+	
+	<!--
+	 * 매출전표번호 채번
+	 * @author KimSunHo
+	 * 2024.11.07
+	 -->
+	<select id="selectMnulCustSalesSlipNo" parameterType="com.cj.freshway.fs.cps.closing.closingmng.entity.MnulCustSalesRegEntity" resultType="String">
+		SELECT /* com.cj.freshway.fs.cps.closing.closingmng.selectMnulCustSalesSlipNo(MnulCustSalesRegEntity)[수기매출등록 매출전표번호 채번] */ 
+		LPAD((COALESCE(MAX(SALES_SLIP_NO), '0')::numeric + 1) ::text, 5, '0')
+			FROM FSCPS.SA_MNUL_SALES_M
+			WHERE CO_ID  = #{coId}
+			AND STE_ID   = #{steId}
+			AND SALES_DT = #{salesDt}
+	</select>
+	
+	<!--
+	 * 수기매출 등록
+	 * @author ParkHakmin
+	 * 2024.10.10
+	 -->
+	<insert id="insertMnulCustSalesReg" parameterType="com.cj.freshway.fs.cps.closing.closingmng.entity.MnulCustSalesRegEntity">
+		<!--
+		<selectKey keyProperty="salesSlipNo" resultType="java.lang.String" order="BEFORE" >
+			SELECT LPAD((COALESCE(MAX(SALES_SLIP_NO), '0')::numeric + 1) ::text, 5, '0')
+			FROM FSCPS.SA_MNUL_SALES_M
+			WHERE CO_ID= #{coId}
+			AND STE_ID   = #{steId}
+			AND SALES_DT = #{salesDt}
+		</selectKey>
+		-->
+		<!-- 수기매출 테이블 tr_header 등록을 위해 tranNo 채번 -->
+		<!--
+		<selectKey keyProperty="tranNo" resultType="java.lang.String" order="BEFORE" >
+			SELECT LPAD(CAST(CAST(COALESCE(MAX(TRAN_NO), '0') AS INTEGER)+1 AS VARCHAR), 4, '0')
+			FROM FSCPS.TR_HEADER
+			WHERE CO_ID   = #{coId}
+			AND SHOP_ID   = #{shopId}
+			AND STE_ID    = #{steId}
+			AND SALE_DT  = #{salesDt}
+			AND POS_NO    = '9999'
+		</selectKey>
+		-->
+		<!-- 수기매출 테이블 sa_mnul_sales_m 등록 -->
+		INSERT  
+		  INTO FSCPS.SA_MNUL_SALES_M
+		     (
+		       CO_ID
+		     , SHOP_ID
+		     , STE_ID
+		     , SALES_DT
+		     , CUST_ID
+		     , SALES_SLIP_NO  
+		     , TAX_CL_CD
+		     , TAX_BIL_PBL_CL_CD
+		     , SALES_BLNC_CL_CD
+		     , MCHN_NO
+		     , CRDT_CRD_ACK_DT
+		     , CRDT_CRD_ACK_CL_CD
+		     , CRDT_CRD_ACK_HMS
+		     , CRDT_CRD_ACK_NO
+		     , CRDCO_CD
+		     , CRDCO_MBST_NO
+		     , CRDT_CRD_CD
+		     , CRDT_CRD_ACK_AMT
+		     , TOT_SALES_AMT
+		     , NET_SALES_AMT
+		     , VAT_AMT
+		     , RSN_DESC
+		     , REG_TYPE_CD
+		     , POS_NO
+		     , SALES_HMS
+		     , REGR_ID
+		     , REG_DTTM
+		     , UPDT_ID
+		     , UPDT_DTTM
+		     ) VALUES (
+		       #{coId}
+		     , #{shopId}		     
+		     , #{steId}
+		     , #{salesDt}
+		     , #{custId}
+		     , #{salesSlipNo}
+		     , #{taxClCd}
+		     , #{taxBilPblClCd}
+		     , #{salesBlncClCd}
+		     , #{mchnNo}
+		     , #{crdtCrdAckDt}
+		     , #{crdtCrdAckClCd}
+		     , #{crdtCrdAckHms}
+		     , #{crdtCrdAckNo}
+		     , #{crdcoCd}		
+		     , #{crdcoMbstNo}
+		     , #{crdtCrdCd}
+		     , CAST(NULLIF(#{crdtCrdAckAmt}::text, '') AS numeric)
+		     , #{totSalesAmt}::numeric
+		     , #{netSalesAmt}::numeric
+		     , #{vatAmt}::numeric
+		     , #{rsnDesc}
+	 	     , '1'
+		     , '9999'
+		     , to_char(now(), 'HH24MISS')
+		     , #{regrId}
+		     , NOW()
+		     , #{regrId}
+		     , NOW()
+			 );
+	</insert>
+	
+	<!--
+	 * 수기매출등록 수정
+	 * @author ParkHakmin
+	 * 2024.10.10
+	 -->
+	<update id="updateMnulCustSalesReg" parameterType="com.cj.freshway.fs.cps.closing.closingmng.entity.MnulCustSalesRegEntity">
+		UPDATE	/* com.cj.freshway.fs.cps.closing.closingmng.updateMnulCustSalesReg(MnulCustSalesRegEntity)[수기매출등록 수정] */  
+		     FSCPS.SA_MNUL_SALES_M
+		SET		RSN_DESC            = #{rsnDesc}
+			  <if test="tranNo == null or tranNo == ''">
+				  , CUST_ID             = #{custId}
+				  , TAX_CL_CD           = #{taxClCd}
+				  , TAX_BIL_PBL_CL_CD   = #{taxBilPblClCd}
+				  , SALES_BLNC_CL_CD    = #{salesBlncClCd}
+				  , MCHN_NO             = #{mchnNo}
+				  , CRDT_CRD_ACK_DT     = #{crdtCrdAckDt}
+				  , CRDT_CRD_ACK_CL_CD  = #{crdtCrdAckClCd}
+				  , CRDT_CRD_ACK_HMS    = #{crdtCrdAckHms}
+				  , CRDT_CRD_ACK_NO     = #{crdtCrdAckNo}
+				  , CRDCO_CD            = #{crdcoCd}
+				  , CRDCO_MBST_NO       = #{crdcoMbstNo}
+				  , CRDT_CRD_CD         = #{crdtCrdCd}
+				  , CRDT_CRD_ACK_AMT    = CAST(NULLIF(#{crdtCrdAckAmt}::text, '') AS numeric)
+				  , TOT_SALES_AMT       = #{totSalesAmt}::numeric
+				  , NET_SALES_AMT       = #{netSalesAmt}::numeric
+				  , VAT_AMT             = #{vatAmt}::numeric
+			  </if>
+			  , UPDT_DTTM             = now()
+			  , UPDT_ID               = #{regrId}
+		WHERE	CO_ID           = #{coId}
+		AND		SHOP_ID         = #{shopId}
+		AND		STE_ID          = #{steId}
+		AND		SALES_DT        = #{salesDt}
+		AND		SALES_SLIP_NO   = #{salesSlipNo}
+		AND     REG_TYPE_CD     = '1'
+	</update>
+	
+	<!--
+	 * 수기매출등록 확정
+	 * @author ParkHakmin
+	 * 2024.12.20
+	 -->
+	<insert id="confirmMnulCustSalesReg" parameterType="com.cj.freshway.fs.cps.closing.closingmng.entity.MnulCustSalesRegEntity">
+		<!-- 수기매출 테이블 tr_header 등록 -->
+		WITH insert1 AS ( INSERT  
+		  INTO FSCPS.TR_HEADER
+		     (
+		       CO_ID
+		     , SHOP_ID
+		     , STE_ID
+		     , SALE_DT
+		     , POS_NO
+		     , TRAN_NO
+		     , SYS_DT
+		     , SYS_TM
+		     , DEAL_SECT     
+			 , DEAL_TYPE     
+			 , DEAL_MODE     
+			 , RFND_YN       
+			 , CASHIER_NO    
+			 , SALES_AMT       
+			 , DC_AMT             
+			 , ACTL_SALES_AMT
+			 , VAT_AMT     
+			 , PRMT_DC_GOODS_AMT
+             , PRMT_DC_SUB_AMT  
+             , TRUNC_AMT        
+             , ITEM_CNT         
+             , PAY_CNT          
+             , DPT_CNT   
+			 , SUBTOTAL_YN   
+			 , REG_DTTM      
+			 , REGR_ID       
+			 , UPDT_DTTM     
+			 , UPDT_ID       
+			 , FRESH_ORD_YN  
+			 , EMP_PAY_DC_AMT   
+             , CJ_DC_AMT        
+		     )
+	       SELECT 
+	           CO_ID
+		     , SHOP_ID
+		     , STE_ID
+		     , SALES_DT
+		     , POS_NO
+		     , ( SELECT LPAD(CAST(CAST(COALESCE(MAX(TRAN_NO), '0') AS INTEGER)+1 AS VARCHAR), 4, '0')
+					FROM FSCPS.TR_HEADER
+					WHERE CO_ID   = #{coId}
+					AND SHOP_ID   = #{shopId}
+					AND STE_ID    = #{steId}
+					AND SALE_DT  = #{salesDt}
+					AND POS_NO    = '9999' )
+			 , TO_CHAR(NOW(), 'YYYYMMDD')
+			 , TO_CHAR(NOW(), 'HH24MISS')
+			 ,CASE
+			   WHEN 0 > TOT_SALES_AMT::numeric then '1'
+			   WHEN CRDT_CRD_ACK_CL_CD = 'H' then '1'
+			   ELSE '0'
+			  END 
+			 , '0'
+			 , '01'
+			 , 'N'
+			 , (SELECT CASHIER_NO FROM fscps.BS_CASHIER_M WHERE CO_ID = #{coId} AND SHOP_ID = #{shopId} AND USE_YN = 'Y' LIMIT 1)
+		     , abs(TOT_SALES_AMT::numeric)
+             , 0
+		     , abs(TOT_SALES_AMT::numeric)
+		     , abs(VAT_AMT::numeric)	    
+			 , 0
+			 , 0
+			 , 0
+			 , 1
+			 , 0
+			 , 0
+			 , '0'
+			 , NOW()
+			 , 'POSSVR'
+			 , NOW()
+			 , 'POSSVR'
+			 , 'N'
+			 , 0
+			 , 0
+	     FROM FSCPS.SA_MNUL_SALES_M
+		WHERE CO_ID          = #{coId}
+		  AND SHOP_ID        = #{shopId}
+		  AND STE_ID         = #{steId}
+		  AND SALES_DT        = #{salesDt}
+		  AND SALES_SLIP_NO  = #{salesSlipNo}
+		  AND REG_TYPE_CD    = '1'
+		  AND POS_NO         = '9999'
+		    RETURNING TRAN_NO ),
+		<!-- 수기매출 테이블 tr_menu 등록 -->
+		insert2 AS ( INSERT 
+		  INTO FSCPS.TR_MENU
+		     (
+		       CO_ID
+		     , SHOP_ID
+		     , STE_ID
+		     , SALE_DT
+		     , POS_NO
+		     , TRAN_NO
+		     , SEQ
+			 , MENU_TP           
+			 , MENU_ID           
+			 , MENU_NM           
+			 , MENU_STE_ID       
+			 , CRNR_ID           
+			 , SALE_UPRC         
+			 , SALES_CNT         
+			 , SALES_AMT         
+			 , ACTL_SALES_AMT    
+			 , TAX_TYPE_CD       
+			 , VAT_AMT 
+			 , DC_AMT          
+			 , CJ_EMPS_DC_OBJ_YN 
+			 , RESI_EMP_DC_OBJ_YN
+			 , TAKE_OUT_YN       
+			 , SUBTOTAL_YN       
+			 , REG_DTTM          
+			 , REGR_ID           
+			 , UPDT_DTTM         
+			 , UPDT_ID   
+			 , PRMT_DC_SUB_AMT   
+		     ) 
+		     SELECT 
+		       CO_ID
+		     , SHOP_ID
+		     , STE_ID
+		     , SALES_DT
+		     , POS_NO
+	         , (select TRAN_NO from insert1)
+	         , 1
+			 , (SELECT M.MENU_TYPE_CD FROM FSCPS.BS_MENU_M_IF M WHERE M.MENU_ID = 'M06340' AND M.CO_ID = #{coId})           
+			 , 'M06340'           
+			 , (SELECT M.MENU_NM FROM FSCPS.BS_MENU_M_IF M WHERE M.MENU_ID = 'M06340' AND M.CO_ID = #{coId})
+			 , STE_ID
+			 , '001'
+			 , abs(TOT_SALES_AMT::numeric)
+			 , 1
+			 , abs(TOT_SALES_AMT::numeric)
+		     , abs(TOT_SALES_AMT::numeric)
+             , TAX_CL_CD
+		     , abs(VAT_AMT::numeric)		    
+			 , 0
+		     , 'Y'
+		     , 'Y'
+		     , 'N'
+		     , '0'
+		     , NOW()
+		     , 'POSSVR'
+		     , NOW()
+		     , 'POSSVR'
+		     , 0
+		     FROM FSCPS.SA_MNUL_SALES_M
+			WHERE CO_ID          = #{coId}
+			  AND SHOP_ID        = #{shopId}
+			  AND STE_ID         = #{steId}
+			  AND SALES_DT        = #{salesDt}
+			  AND SALES_SLIP_NO  = #{salesSlipNo}
+			  AND REG_TYPE_CD     = '1'
+			  AND POS_NO         = '9999'
+		   ),
+		<!-- 수기매출 테이블 tr_pay 등록 -->
+		insert3 AS ( INSERT 
+		  INTO FSCPS.TR_PAY
+		     (
+		       CO_ID
+		     , SHOP_ID
+		     , STE_ID
+		     , SALE_DT
+		     , POS_NO
+		     , TRAN_NO
+			 , SEQ         
+			 , PAY_SEQ     
+			 , PAY_CD      
+			 , SALES_AMT   
+			 , RCV_AMT  
+			 , CASH_CHNG_AMT   
+			 , SUBTOTAL_YN 
+			 , REG_DTTM    
+			 , REGR_ID     
+			 , UPDT_DTTM   
+			 , UPDT_ID 
+			 , DC_AMT    
+		     ) 
+		     SELECT 
+		       CO_ID
+		     , SHOP_ID
+		     , STE_ID
+		     , SALES_DT
+		     , POS_NO
+	         , (select TRAN_NO from insert1)
+		     , 1
+		     , 1 			 
+		     ,CASE
+			   WHEN SALES_BLNC_CL_CD = '21' then '205'
+			   WHEN SALES_BLNC_CL_CD = '22' then '201'
+			   WHEN SALES_BLNC_CL_CD = '23' then '203'
+			  END 
+			 , abs(TOT_SALES_AMT::numeric)
+		     , abs(TOT_SALES_AMT::numeric)    
+			 , 0
+		     , '0'
+		     , NOW()
+		     , 'POSSVR'
+		     , NOW()
+		     , 'POSSVR'
+		     , 0
+		     FROM FSCPS.SA_MNUL_SALES_M
+			WHERE CO_ID          = #{coId}
+			  AND SHOP_ID        = #{shopId}
+			  AND STE_ID         = #{steId}
+			  AND SALES_DT        = #{salesDt}
+			  AND SALES_SLIP_NO  = #{salesSlipNo}
+			  AND REG_TYPE_CD     = '1'
+			  AND POS_NO         = '9999'
+		   ),
+		<!-- 수기매출 테이블 tr_cash or tr_card or tr_trade_acc_recv 등록 -->
+		insert4 AS ( INSERT 
+		  <choose>
+			  <when test='salesBlncClCd == "22"'>
+		  INTO FSCPS.TR_CASH
+			  </when>
+			  <when test='salesBlncClCd == "23"'>
+		  INTO FSCPS.TR_CARD
+			  </when>
+			  <when test='salesBlncClCd == "21"'>
+		  INTO FSCPS.TR_TRADE_ACC_RECV
+			  </when>
+		  </choose>
+		     (
+		       CO_ID
+		     , SHOP_ID
+		     , STE_ID
+		     , SALE_DT
+		     , POS_NO
+		     , TRAN_NO
+			 , SEQ     
+			 , SUBTOTAL_YN 
+			 <choose>
+			  <when test='salesBlncClCd == "22"'>
+			 , PAY_AMT    
+			 , RCV_AMT    
+			 , CHNG_AMT  
+			  </when>
+			  <when test='salesBlncClCd == "23"'>
+		     , APP_DT
+		     , SALE_AMT    
+			 , TAXBLE_AMT  
+			 , VAT_AMT     
+			 , TEXFREE_AMT 
+			 , DC_AMT      
+			 , DC_RATE     
+			 , NON_DC_AMT  
+			 , USE_AMT     
+			 , REMAIND_AMT 
+			 , USE_CNT     
+			 , TID 
+			 , APPR_NO        
+			 , PUR_CORP_CD 
+			 , PUR_CORP_NM 
+			 , BALANCE_AMT 
+			 , SAVE_POINT  
+			 , USE_POINT   
+			 , TOT_POINT   
+			  </when>
+			  <when test='salesBlncClCd == "21"'>
+		     , CUST_ID	       
+			 , PAY_AMT	       
+			 , CRED_PAY_TYPE_CD
+			  </when>
+			 </choose>    
+			 , REG_DTTM   
+			 , REGR_ID    
+			 , UPDT_DTTM  
+			 , UPDT_ID	  
+		     ) 
+		     SELECT 
+		       CO_ID
+		     , SHOP_ID
+		     , STE_ID
+		     , SALES_DT
+		     , POS_NO
+		     , (select TRAN_NO from insert1)
+		     , 1
+		     , '0'
+			 <choose>
+			  <when test='salesBlncClCd == "22"'>
+		     , abs(TOT_SALES_AMT::numeric)
+		     , abs(TOT_SALES_AMT::numeric)
+		     , 0
+			  </when>
+			  <when test='salesBlncClCd == "23"'>
+		     , CONCAT(CRDT_CRD_ACK_DT, CRDT_CRD_ACK_HMS)
+		     , abs(TOT_SALES_AMT::numeric)
+		     , abs(TOT_SALES_AMT::numeric)
+		     , abs(VAT_AMT::numeric)
+		     , 0
+		     , 0
+		     , 0
+		     , 0
+		     , 0
+		     , 0
+		     , 0
+		     , MCHN_NO
+		     , CRDT_CRD_ACK_NO	
+		     , CRDCO_CD
+		     , (SELECT COMM_CD_NM FROM fscps.CM_CODE_M_IF WHERE COMM_CL_CD = 'FP001' AND COMM_CD = CRDCO_CD)
+		     , 0
+		     , 0
+		     , 0
+		     , 0
+			  </when>
+			  <when test='salesBlncClCd == "21"'>
+		     , CUST_ID	
+		     , abs(TOT_SALES_AMT::numeric)    
+			 , #{credPayTypeCd}
+			  </when>
+			 </choose>
+		     , NOW()
+		     , 'POSSVR'
+		     , NOW()
+		     , 'POSSVR'
+		     FROM FSCPS.SA_MNUL_SALES_M
+			WHERE CO_ID          = #{coId}
+			  AND SHOP_ID        = #{shopId}
+			  AND STE_ID         = #{steId}
+			  AND SALES_DT        = #{salesDt}
+			  AND SALES_SLIP_NO  = #{salesSlipNo}
+			  AND REG_TYPE_CD     = '1'
+			  AND POS_NO         = '9999'
+		  )
+		<!-- 수기매출 테이블 sa_mnul_sales_m TranNo 업데이트-->
+	    UPDATE	/* com.cj.freshway.fs.cps.closing.closingmng.updateMnulCustSalesReg(MnulCustSalesRegEntity)[수기매출등록 수정] */  
+		     FSCPS.SA_MNUL_SALES_M
+		SET		TRAN_NO         = (select TRAN_NO from insert1)
+			  , UPDT_DTTM       = now()
+			  , UPDT_ID         = #{regrId}
+		WHERE	CO_ID           = #{coId}
+		AND		SHOP_ID         = #{shopId}
+		AND		STE_ID          = #{steId}
+		AND		SALES_DT        = #{salesDt}
+		AND		SALES_SLIP_NO   = #{salesSlipNo}
+		AND     REG_TYPE_CD     = '1'
+	</insert>
+	
+	<!--
+	 * 수기매출등록 취소
+	 * @author ParkHakmin
+	 * 2024.10.10
+	 -->
+	<insert id="cancelMnulCustSalesReg" parameterType="com.cj.freshway.fs.cps.closing.closingmng.entity.MnulCustSalesRegEntity">
+		<!-- 수기매출 테이블 tr_header 등록 -->
+		WITH insert1 AS ( INSERT  
+		  INTO FSCPS.TR_HEADER
+		     (
+		       CO_ID
+		     , SHOP_ID
+		     , STE_ID
+		     , SALE_DT
+		     , POS_NO
+		     , TRAN_NO
+		     , SYS_DT
+		     , SYS_TM
+		     , DEAL_SECT     
+			 , DEAL_TYPE     
+			 , DEAL_MODE     
+			 , RFND_YN       
+			 , CASHIER_NO    
+			 , SALES_AMT       
+			 , DC_AMT             
+			 , ACTL_SALES_AMT
+			 , VAT_AMT     
+			 , PRMT_DC_GOODS_AMT
+             , PRMT_DC_SUB_AMT  
+             , TRUNC_AMT        
+             , ITEM_CNT         
+             , PAY_CNT          
+             , DPT_CNT   
+			 , SUBTOTAL_YN   
+			 , REG_DTTM      
+			 , REGR_ID       
+			 , UPDT_DTTM     
+			 , UPDT_ID       
+			 , FRESH_ORD_YN  
+			 , EMP_PAY_DC_AMT   
+             , CJ_DC_AMT        
+		     )
+	       SELECT 
+	           CO_ID
+		     , SHOP_ID
+		     , STE_ID
+		     , SALE_DT
+		     , POS_NO
+		     , ( SELECT LPAD(CAST(CAST(COALESCE(MAX(TRAN_NO), '0') AS INTEGER)+1 AS VARCHAR), 4, '0')
+					FROM FSCPS.TR_HEADER
+					WHERE CO_ID   = #{coId}
+					AND SHOP_ID   = #{shopId}
+					AND STE_ID    = #{steId}
+					AND SALE_DT  = #{salesDt}
+					AND POS_NO    = '9999' )
+			 , TO_CHAR(NOW(), 'YYYYMMDD')
+			 , TO_CHAR(NOW(), 'HH24MISS')
+			 ,CASE
+			   WHEN DEAL_SECT = '1' then '0'
+				    ELSE '1'
+			  END 
+			 , '0'
+			 , '01'
+			 , 'N'
+			 , (SELECT CASHIER_NO FROM fscps.BS_CASHIER_M WHERE CO_ID = #{coId} AND SHOP_ID = #{shopId} AND USE_YN = 'Y' LIMIT 1)
+		     , SALES_AMT
+             , 0
+		     , ACTL_SALES_AMT
+		     , VAT_AMT		    
+			 , 0
+			 , 0
+			 , 0
+			 , 1
+			 , 0
+			 , 0
+			 , '0'
+			 , NOW()
+			 , 'POSSVR'
+			 , NOW()
+			 , 'POSSVR'
+			 , 'N'
+			 , 0
+			 , 0
+	     FROM FSCPS.TR_HEADER
+		WHERE CO_ID          = #{coId}
+		  AND SHOP_ID        = #{shopId}
+		  AND STE_ID         = #{steId}
+		  AND SALE_DT        = #{salesDt}
+		  AND TRAN_NO        = #{tranNo}
+		  AND POS_NO         = '9999'
+		    RETURNING TRAN_NO ),
+		<!-- 수기매출 테이블 tr_menu 등록 -->
+		insert2 AS ( INSERT 
+		  INTO FSCPS.TR_MENU
+		     (
+		       CO_ID
+		     , SHOP_ID
+		     , STE_ID
+		     , SALE_DT
+		     , POS_NO
+		     , TRAN_NO
+		     , SEQ
+			 , MENU_TP           
+			 , MENU_ID           
+			 , MENU_NM           
+			 , MENU_STE_ID       
+			 , CRNR_ID           
+			 , SALE_UPRC         
+			 , SALES_CNT         
+			 , SALES_AMT         
+			 , ACTL_SALES_AMT    
+			 , TAX_TYPE_CD       
+			 , VAT_AMT 
+			 , DC_AMT          
+			 , CJ_EMPS_DC_OBJ_YN 
+			 , RESI_EMP_DC_OBJ_YN
+			 , TAKE_OUT_YN       
+			 , SUBTOTAL_YN       
+			 , REG_DTTM          
+			 , REGR_ID           
+			 , UPDT_DTTM         
+			 , UPDT_ID   
+			 , PRMT_DC_SUB_AMT   
+		     ) 
+		     SELECT 
+		       CO_ID
+		     , SHOP_ID
+		     , STE_ID
+		     , SALE_DT
+		     , POS_NO
+	         , (select TRAN_NO from insert1)
+	         , 1
+			 , MENU_TP           
+			 , MENU_ID           
+			 , MENU_NM
+			 , MENU_STE_ID
+			 , '001'
+			 , SALE_UPRC
+			 , 1
+			 , SALES_AMT
+		     , ACTL_SALES_AMT
+             , TAX_TYPE_CD
+		     , VAT_AMT		    
+			 , 0
+		     , 'Y'
+		     , 'Y'
+		     , 'N'
+		     , '0'
+		     , NOW()
+		     , 'POSSVR'
+		     , NOW()
+		     , 'POSSVR'
+		     , 0
+		     FROM FSCPS.TR_MENU
+			WHERE CO_ID          = #{coId}
+			  AND SHOP_ID        = #{shopId}
+			  AND STE_ID         = #{steId}
+			  AND SALE_DT        = #{salesDt}
+		      AND TRAN_NO        = #{tranNo}
+		      AND POS_NO         = '9999'
+		   ),
+		<!-- 수기매출 테이블 tr_pay 등록 -->
+		insert3 AS ( INSERT 
+		  INTO FSCPS.TR_PAY
+		     (
+		       CO_ID
+		     , SHOP_ID
+		     , STE_ID
+		     , SALE_DT
+		     , POS_NO
+		     , TRAN_NO
+			 , SEQ         
+			 , PAY_SEQ     
+			 , PAY_CD      
+			 , SALES_AMT   
+			 , RCV_AMT  
+			 , CASH_CHNG_AMT   
+			 , SUBTOTAL_YN 
+			 , REG_DTTM    
+			 , REGR_ID     
+			 , UPDT_DTTM   
+			 , UPDT_ID 
+			 , DC_AMT    
+		     ) 
+		     SELECT 
+		       CO_ID
+		     , SHOP_ID
+		     , STE_ID
+		     , SALE_DT
+		     , POS_NO
+	         , (select TRAN_NO from insert1)
+		     , 1
+		     , 1 
+			 , PAY_CD 
+			 , SALES_AMT
+		     , RCV_AMT	    
+			 , 0
+		     , '0'
+		     , NOW()
+		     , 'POSSVR'
+		     , NOW()
+		     , 'POSSVR'
+		     , 0
+		     FROM FSCPS.TR_PAY
+			WHERE CO_ID          = #{coId}
+			  AND SHOP_ID        = #{shopId}
+			  AND STE_ID         = #{steId}
+			  AND SALE_DT        = #{salesDt}
+		      AND TRAN_NO        = #{tranNo}
+		      AND POS_NO         = '9999'
+		   ),
+		<!-- 수기매출 테이블 tr_cash or tr_card or tr_trade_acc_recv 등록 -->
+		insert4 AS ( INSERT 
+		  <choose>
+			  <when test='salesBlncClCd == "22"'>
+		  INTO FSCPS.TR_CASH
+			  </when>
+			  <when test='salesBlncClCd == "23"'>
+		  INTO FSCPS.TR_CARD
+			  </when>
+			  <when test='salesBlncClCd == "21"'>
+		  INTO FSCPS.TR_TRADE_ACC_RECV
+			  </when>
+		  </choose>
+		     (
+		       CO_ID
+		     , SHOP_ID
+		     , STE_ID
+		     , SALE_DT
+		     , POS_NO
+		     , TRAN_NO
+			 , SEQ     
+			 , SUBTOTAL_YN 
+			 <choose>
+			  <when test='salesBlncClCd == "22"'>
+			 , PAY_AMT    
+			 , RCV_AMT    
+			 , CHNG_AMT  
+			  </when>
+			  <when test='salesBlncClCd == "23"'>
+		     , APP_DT
+		     , SALE_AMT    
+			 , TAXBLE_AMT  
+			 , VAT_AMT     
+			 , TEXFREE_AMT 
+			 , DC_AMT      
+			 , DC_RATE     
+			 , NON_DC_AMT  
+			 , USE_AMT     
+			 , REMAIND_AMT 
+			 , USE_CNT     
+			 , TID 
+			 , APPR_NO        
+			 , PUR_CORP_CD 
+			 , PUR_CORP_NM 
+			 , BALANCE_AMT 
+			 , SAVE_POINT  
+			 , USE_POINT   
+			 , TOT_POINT   
+			  </when>
+			  <when test='salesBlncClCd == "21"'>
+		     , CUST_ID	       
+			 , PAY_AMT	       
+			 , CRED_PAY_TYPE_CD
+			  </when>
+			 </choose>    
+			 , REG_DTTM   
+			 , REGR_ID    
+			 , UPDT_DTTM  
+			 , UPDT_ID	  
+		     ) 
+		     SELECT 
+		       CO_ID
+		     , SHOP_ID
+		     , STE_ID
+		     , SALE_DT
+		     , POS_NO
+		     , (select TRAN_NO from insert1)
+		     , 1
+		     , '0'
+			 <choose>
+			  <when test='salesBlncClCd == "22"'>
+		     , PAY_AMT
+		     , RCV_AMT
+		     , CHNG_AMT
+			  </when>
+			  <when test='salesBlncClCd == "23"'>
+		     , APP_DT
+		     , SALE_AMT
+		     , TAXBLE_AMT
+		     , VAT_AMT
+		     , 0
+		     , 0
+		     , 0
+		     , 0
+		     , 0
+		     , 0
+		     , 0
+		     , TID
+		     , PUR_CORP_CD	
+		     , PUR_CORP_NM
+		     , APPR_NO
+		     , 0
+		     , 0
+		     , 0
+		     , 0
+			  </when>
+			  <when test='salesBlncClCd == "21"'>
+		     , CUST_ID	
+		     , PAY_AMT    
+			 , CRED_PAY_TYPE_CD
+			  </when>
+			 </choose>
+		     , NOW()
+		     , 'POSSVR'
+		     , NOW()
+		     , 'POSSVR'
+		  <choose>
+			  <when test='salesBlncClCd == "22"'>
+		  	 FROM FSCPS.TR_CASH
+			  </when>
+			  <when test='salesBlncClCd == "23"'>
+		  	 FROM FSCPS.TR_CARD
+			  </when>
+			  <when test='salesBlncClCd == "21"'>
+		  	 FROM FSCPS.TR_TRADE_ACC_RECV
+			  </when>
+		  </choose>
+			WHERE CO_ID          = #{coId}
+			  AND SHOP_ID        = #{shopId}
+			  AND STE_ID         = #{steId}
+			  AND SALE_DT        = #{salesDt}
+		      AND TRAN_NO        = #{tranNo}
+		      AND POS_NO         = '9999'
+		  )
+		<!-- 수기매출 테이블 sa_mnul_sales_m 등록 취소-->
+		INSERT 	/* com.cj.freshway.fs.cps.closing.closingmng.cancelMnulCustSalesReg(MnulCustSalesRegEntity)[수기매출등록 취소] */
+		  INTO FSCPS.SA_MNUL_SALES_M
+		     (
+		       CO_ID
+		     , SHOP_ID
+			 , STE_ID
+		     , SALES_DT
+		     , CUST_ID
+		     , SALES_SLIP_NO  
+		     , TAX_CL_CD
+		     , TAX_BIL_PBL_CL_CD
+		     , SALES_BLNC_CL_CD
+		     , MCHN_NO
+		     , CRDT_CRD_ACK_DT
+		     , CRDT_CRD_ACK_CL_CD
+		     , CRDT_CRD_ACK_HMS
+		     , CRDT_CRD_ACK_NO
+		     , CRDCO_CD		     
+		     , CRDCO_MBST_NO
+		     , CRDT_CRD_CD
+		     , CRDT_CRD_ACK_AMT
+		     , TOT_SALES_AMT
+		     , NET_SALES_AMT
+		     , VAT_AMT		     
+		     , SALES_CNCL_ORI_SLIP_NO
+		     , CNCL_YN
+		     , RSN_DESC
+		     , REG_TYPE_CD
+		     , POS_NO
+		     , SALES_HMS
+		     , REGR_ID
+		     , REG_DTTM
+		     , UPDT_ID
+		     , UPDT_DTTM
+		     , TRAN_NO
+		     ) 
+		SELECT CO_ID
+		     , SHOP_ID
+		     , STE_ID
+		     , SALES_DT
+		     , CUST_ID
+		     , (SELECT LPAD((COALESCE(MAX(SALES_SLIP_NO), '0')::numeric + 1) ::text, 5, '0')
+					FROM FSCPS.SA_MNUL_SALES_M
+					WHERE CO_ID  = #{coId}
+					AND STE_ID   = #{steId}
+					AND SALES_DT = #{salesDt})
+		     , TAX_CL_CD
+		     , TAX_BIL_PBL_CL_CD
+		     , SALES_BLNC_CL_CD
+		     , MCHN_NO
+		     , CRDT_CRD_ACK_DT
+		     , CRDT_CRD_ACK_CL_CD
+		     , CRDT_CRD_ACK_HMS
+		     , CRDT_CRD_ACK_NO
+		     , CRDCO_CD		    
+		     , CRDCO_MBST_NO
+		     , CRDT_CRD_CD 
+		     , -1 * CRDT_CRD_ACK_AMT
+		     , -1 * TOT_SALES_AMT
+		     , -1 * NET_SALES_AMT
+		     , -1 * VAT_AMT		     
+		     , SALES_SLIP_NO
+		     , 'Y'
+			 , #{rsnDesc}
+			 , '1'
+			 , POS_NO
+			 , SALES_HMS
+		     , #{regrId}
+		     , NOW()
+		     , #{regrId}
+		     , NOW()
+		     , (select TRAN_NO from insert1)
+	     FROM FSCPS.SA_MNUL_SALES_M
+		WHERE CO_ID          = #{coId}
+		  AND SHOP_ID        = #{shopId}
+		  AND STE_ID         = #{steId}
+		  AND SALES_DT       = #{salesDt}
+		  AND SALES_SLIP_NO  = #{salesSlipNo}
+	</insert>
+	
+	<select id="callSalesNextProc" parameterType="com.cj.freshway.fs.cps.closing.closingmng.entity.MnulCustSalesRegEntity" resultType="com.cj.freshway.fs.cps.closing.closingmng.entity.MnulCustSalesRegEntity" statementType="CALLABLE">
+     	{
+     		 call fwsafsd.PK_IF_MGNT_I_SP_FS_DAY_CLOSE_SAP_IF
+     			 (
+     			   #{coId    , mode=IN, jdbcType=VARCHAR}
+     			 , #{steId   , mode=IN, jdbcType=VARCHAR}
+     			 , #{salesDt , mode=IN, jdbcType=VARCHAR}
+     			 , CAST(NULLIF(CAST(#{rtnCd, mode=OUT, jdbcType=VARCHAR} AS VARCHAR), '') AS TEXT)
+     			 , CAST(NULLIF(CAST(#{rtnMsg, mode=OUT, jdbcType=VARCHAR} AS VARCHAR), '') AS TEXT)
+     			 )
+     	}
+    </select>	
+    
+    <select id="callSalesResultProc" parameterType="com.cj.freshway.fs.cps.closing.closingmng.entity.MnulCustSalesRegEntity" resultType="com.cj.freshway.fs.cps.closing.closingmng.entity.MnulCustSalesRegEntity" statementType="CALLABLE">
+     	{
+     		 call fscps.sp_fs_sales_sap_if_rslt_apply()
+     	}
+    </select>
+    
+    <insert id="insertSapWacc" parameterType="com.cj.freshway.fs.cps.closing.closingmng.entity.MnulCustSalesRegEntity">
+     	UPDATE fscps.SA_CLOSING_GDOH_SUM_M
+     	SET 
+     		SAP_SND_STTS_CD = '4'
+		WHERE 1 = 1
+		  AND CO_ID   = #{coId}
+		  AND SHOP_ID = #{shopId}
+		  <if test="steId != null and steId != ''">
+			  AND STE_ID  = #{steId}
+		  </if>
+		  AND OCCR_DT = #{salesDt}
+		  AND (
+				SELECT COUNT(*) 
+						FROM  fscps.sa_closing_daily_sales_m
+						WHERE 1 = 1
+						  AND CO_ID    = #{coId}
+						  AND SHOP_ID  = #{shopId}
+						  <if test="steId != null and steId != ''">
+							  AND STE_ID  = #{steId}
+						  </if>
+						  AND SALES_DT = #{salesDt}
+				) = 
+				(
+				SELECT COUNT(*) 
+						FROM  fscps.sa_closing_daily_sales_m
+						WHERE 1 = 1
+						  AND CO_ID    = #{coId}
+						  AND SHOP_ID  = #{shopId}
+						  <if test="steId != null and steId != ''">
+							  AND STE_ID  = #{steId}
+						  </if>
+						  AND SALES_DT = #{salesDt}
+						  AND if_id is not null 
+				)
+    </insert>
+    
+</mapper>
