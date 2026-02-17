@@ -1,0 +1,128 @@
+================================================================
+리액트 라우터 — 사용된 핵심 개념 정리
+================================================================
+
+이 프로젝트에서 사용하는 라이브러리: react-router (v7)
+import 경로: 'react-router' (v6까지는 'react-router-dom')
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+1. BrowserRouter / Routes / Route
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  <BrowserRouter>     ← URL 변경을 감지하는 컨테이너
+    <Routes>          ← 여러 Route 중 매칭되는 하나를 렌더링
+      <Route path="/login" element={<LoginPage />} />
+    </Routes>
+  </BrowserRouter>
+
+  BrowserRouter: HTML5 History API 사용 (URL에 # 없음)
+  Routes: path 매칭 엔진 (위에서 아래로 매칭)
+  Route: path → element 매핑
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+2. 중첩 라우트 (Nested Routes) + Outlet
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  <Route element={<ProtectedRoute />}>       ← 부모 (레이아웃 역할)
+    <Route element={<Layout />}>             ← 중간 레이아웃
+      <Route path="/brand" element={<BrandPage />} />   ← 자식
+    </Route>
+  </Route>
+
+  부모 Route에 path 없이 element만 있으면 → "레이아웃 라우트"
+  부모 컴포넌트 안에서 <Outlet />이 자식 라우트를 렌더링.
+
+  렌더링 결과:
+  <ProtectedRoute>           ← 인증 체크
+    <Outlet>                 ← Layout이 여기에 들어감
+      <Layout>
+        <Header />
+        <Outlet>             ← BrandPage가 여기에 들어감
+          <BrandPage />
+        </Outlet>
+      </Layout>
+    </Outlet>
+  </ProtectedRoute>
+
+  핵심: Outlet = "자식 라우트가 렌더링될 자리"
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+3. Navigate (리다이렉트)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  <Navigate to="/login" replace />
+
+  렌더링되면 즉시 해당 경로로 이동.
+  replace: 히스토리 스택 교체 (뒤로가기 방지)
+
+  사용처:
+  - ProtectedRoute: 토큰 없으면 → /login
+  - App.jsx: path="*" → /brand (없는 경로 처리)
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+4. NavLink (활성 메뉴 표시)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  <NavLink
+    to="/brand"
+    className={({ isActive }) => `btn-text ${isActive ? 'active' : ''}`}
+  >
+    브랜드 관리
+  </NavLink>
+
+  NavLink vs Link:
+  - Link: 단순 이동
+  - NavLink: 현재 URL과 일치하면 isActive=true → 활성 스타일 적용
+
+  사용처: Header.jsx의 메뉴 (브랜드 관리, 동기화 이력)
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+5. useNavigate (프로그래밍 방식 이동)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  const navigate = useNavigate()
+
+  // 이벤트 핸들러에서 이동
+  navigate('/login')          ← push (뒤로가기 가능)
+  navigate('/brand', { replace: true })  ← replace (뒤로가기 불가)
+
+  NavLink/Navigate: JSX에서 선언적 이동
+  useNavigate: JS 코드에서 명령적 이동 (로그인 성공 후, 로그아웃 후 등)
+
+  사용처:
+  - Header.jsx: 로그아웃 후 navigate('/login')
+  - LoginPage.jsx: 로그인 성공 후 navigate('/brand')
+  - SignupPage.jsx: 회원가입 성공 후 navigate('/login')
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+정리: 이 프로젝트에서 쓰는 react-router 기능
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ┌──────────────────┬──────────────────────────────────┐
+  │ 기능             │ 용도                              │
+  ├──────────────────┼──────────────────────────────────┤
+  │ BrowserRouter    │ 라우팅 컨테이너                   │
+  │ Routes + Route   │ URL → 컴포넌트 매핑               │
+  │ Outlet           │ 자식 라우트 렌더링 자리            │
+  │ Navigate         │ 선언적 리다이렉트                  │
+  │ NavLink          │ 활성 상태 표시되는 링크            │
+  │ useNavigate      │ 코드에서 페이지 이동               │
+  └──────────────────┴──────────────────────────────────┘

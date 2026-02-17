@@ -1,0 +1,81 @@
+================================================================
+기본 페이지 라우팅 — App.jsx 라우트 구조
+================================================================
+
+■ 전체 라우트 맵
+
+  /login          → LoginPage       (공개)
+  /signup         → SignupPage      (공개)
+  /brand          → BrandPage       (인증 필요)
+  /sync-history   → SyncHistoryPage (인증 필요)
+  /*              → /brand로 리다이렉트
+
+
+■ 중첩 구조 (App.jsx)
+
+  <AuthProvider>                          ← 인증 상태 전역 제공
+    <BrowserRouter>
+      <Routes>
+        <Route path="/login"    />        ← 공개 페이지
+        <Route path="/signup"   />        ← 공개 페이지
+
+        <Route element={<ProtectedRoute />}>    ← 인증 체크 (토큰 없으면 /login)
+          <Route element={<Layout />}>          ← Header + Toaster + main
+            <Route path="/brand"        />      ← 브랜드 관리
+            <Route path="/sync-history" />      ← 동기화 이력
+          </Route>
+        </Route>
+
+        <Route path="*" → /brand />       ← 없는 경로 → /brand
+      </Routes>
+    </BrowserRouter>
+  </AuthProvider>
+
+
+■ 인증 보호 (ProtectedRoute.jsx)
+
+  토큰이 없으면 → <Navigate to="/login" replace />
+  토큰이 있으면 → <Outlet /> (자식 라우트 렌더링)
+
+  replace를 쓰는 이유:
+  → 뒤로가기 했을 때 보호된 페이지로 다시 안 가게
+  → 히스토리 스택에서 교체 (push가 아닌 replace)
+
+
+■ 레이아웃 (Layout.jsx)
+
+  인증된 모든 페이지에 공통 적용:
+  → Header (네비게이션 메뉴 + 로그아웃)
+  → Toaster (toast 알림)
+  → <main><Outlet /></main> (페이지 콘텐츠)
+
+
+■ 인증 상태 관리 (AuthContext.jsx)
+
+  localStorage에 accessToken, userInfo 저장.
+  → isAuthenticated = !!token
+  → login(): 토큰 + 유저 정보 저장
+  → logout(): 토큰 + 유저 정보 삭제 → /login 이동
+
+
+■ 페이지별 접근 흐름
+
+  [비로그인 상태]
+  아무 URL → ProtectedRoute → 토큰 없음 → /login
+
+  [로그인 후]
+  /login에서 로그인 → localStorage에 토큰 저장 → /brand로 이동
+
+  [로그아웃]
+  Header 로그아웃 버튼 → logout() → localStorage 삭제 → /login
+
+
+■ 관련 파일
+
+  - App.jsx                     : 라우트 정의
+  - ProtectedRoute.jsx          : 인증 체크
+  - Layout.jsx                  : 공통 레이아웃 (Header + Outlet)
+  - Header.jsx                  : 네비게이션 메뉴
+  - AuthContext.jsx              : 인증 상태 (token, user, login, logout)
+  - LoginPage.jsx               : 로그인 폼
+  - SignupPage.jsx              : 회원가입 폼
