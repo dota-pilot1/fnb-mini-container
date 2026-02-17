@@ -1,0 +1,116 @@
+================================================================
+낙관적 락 (Optimistic Locking)
+================================================================
+
+■ 문제 상황
+
+  사용자 A가 브랜드를 조회 (version=3)
+  사용자 B가 같은 브랜드를 조회 (version=3)
+  사용자 A가 수정 → 성공 (version 3→4)
+  사용자 B가 수정 → 이미 version=4인데 version=3으로 WHERE 조건 → 0행 업데이트!
+
+  낙관적 락이 없으면?
+  → 사용자 B의 수정이 A의 수정을 덮어씀 (Lost Update)
+
+
+■ 해결: version 컬럼 + WHERE 조건
+
+  UPDATE brand
+     SET brand_name = #{brandName},
+         ...
+         version = version + 1,     ← 업데이트할 때마다 증가
+         upd_dttm = NOW()
+   WHERE id = #{id}
+     AND version = #{version}       ← 내가 읽었던 version과 같을 때만!
+
+  → 다른 사용자가 먼저 수정했으면 version이 안 맞아서 0행 리턴
+
+
+■ 핵심 코드
+
+  [BrandMapper.xml - updateBrandWithVersion]
+
+  <update id="updateBrandWithVersion">
+      UPDATE brand
+         SET brand_name = #{brandName},
+             brand_name_en = #{brandNameEn},
+             brand_desc = #{brandDesc},
+             use_yn = #{useYn},
+             sync_status = 'PENDING',
+             version = version + 1,
+             upd_id = #{updId},
+             upd_dttm = NOW()
+       WHERE id = #{id}
+         AND version = #{version}
+  </update>
+
+
+  [BrandService.java - saveBrandsToDb()]
+
+  case "U" -> {
+      int updated = brandMapper.updateBrandWithVersion(brand);
+      if (updated == 0) {
+          throw new BrandException(
+              "브랜드 '" + brand.getBrandCode() + "': " +
+              "다른 사용자가 먼저 수정했습니다. 새로고침 후 다시 시도하세요."
+          );
+      }
+  }
+
+
+  [schema.sql - version 컬럼]
+
+  CREATE TABLE brand (
+      ...
+      version  INT  NOT NULL DEFAULT 0,   -- 낙관적 락
+      ...
+  );
+
+
+  [BrandSaveReqDto.java - 클라이언트가 version 전달]
+
+  @Data
+  public class BrandSaveReqDto {
+      private Long id;
+      private Integer version;     // 수정 시 필수
+      private String status;       // C / U / D
+      ...
+  }
+
+
+■ 흐름 시나리오
+
+  1. 사용자 A: GET /api/brands/1 → { version: 3, brandName: "스타벅스" }
+  2. 사용자 B: GET /api/brands/1 → { version: 3, brandName: "스타벅스" }
+  3. 사용자 A: POST /api/brands [{ id:1, version:3, status:"U", brandName:"스타벅스2" }]
+     → UPDATE ... WHERE id=1 AND version=3 → 1행 → 성공 (version → 4)
+  4. 사용자 B: POST /api/brands [{ id:1, version:3, status:"U", brandName:"스타벅스3" }]
+     → UPDATE ... WHERE id=1 AND version=3 → 0행 → BrandException!
+     → "다른 사용자가 먼저 수정했습니다. 새로고침 후 다시 시도하세요."
+
+
+■ 낙관적 락 vs 비관적 락
+
+  ┌──────────────┬──────────────────────┬──────────────────────┐
+  │              │ 낙관적 (Optimistic)   │ 비관적 (Pessimistic)  │
+  ├──────────────┼──────────────────────┼──────────────────────┤
+  │ 방식         │ version 비교          │ SELECT ... FOR UPDATE │
+  │ 락 시점      │ UPDATE 시점만         │ SELECT부터 락         │
+  │ 커넥션 점유  │ 짧음                  │ 길음 (트랜잭션 끝까지)│
+  │ 충돌 처리    │ 예외 → 재시도         │ 대기 → 순차 처리      │
+  │ 적합한 상황  │ 충돌 드문 경우        │ 충돌 잦은 경우        │
+  │ 이 프로젝트  │ ✓ 사용               │ 미사용                │
+  └──────────────┴──────────────────────┴──────────────────────┘
+
+  이 프로젝트에서 낙관적 락을 선택한 이유:
+  - 외부 API 호출이 3~6초 걸림
+  - 비관적 락이면 그 동안 DB 커넥션을 잡고 있어야 함
+  - 트랜잭션 분리와 조합하려면 낙관적 락이 맞음
+
+
+■ 관련 파일
+
+  - BrandMapper.xml      : updateBrandWithVersion (SQL)
+  - BrandService.java    : saveBrandsToDb() 내 case "U" (검증 로직)
+  - BrandSaveReqDto.java : version 필드 (클라이언트 전달)
+  - schema.sql           : brand.version 컬럼

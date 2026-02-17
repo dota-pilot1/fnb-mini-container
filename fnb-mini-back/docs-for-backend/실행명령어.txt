@@ -1,0 +1,77 @@
+=====================================
+  fnb-mini-back 실행 명령어 정리
+=====================================
+
+[ 사전 준비 ]
+  - Java 17 이상 설치
+  - Docker & Docker Compose 설치
+  - 모든 명령어는 프로젝트 루트(C:\fnb-mini-back)에서 실행
+
+-------------------------------------
+1. PostgreSQL DB 실행 (Docker)
+-------------------------------------
+  # DB 시작
+  docker-compose -f compose.yaml up -d
+
+  # DB 중지
+  docker-compose -f compose.yaml down
+
+  # DB 로그 확인
+  docker-compose -f compose.yaml logs -f
+
+  # DB 접속 정보
+  - Host     : localhost
+  - Port     : 15432
+  - Database : fnbmini
+  - User     : fnbmini
+  - Password : fnbmini123
+  - JDBC URL : jdbc:postgresql://localhost:15432/fnbmini
+
+-------------------------------------
+2. 프로젝트 빌드
+-------------------------------------
+  # Windows
+  .\mvnw.cmd clean install
+
+  # Linux/Mac
+  ./mvnw clean install
+
+  # 테스트 건너뛰고 빌드
+  .\mvnw.cmd clean install -DskipTests
+
+-------------------------------------
+3. 애플리케이션 실행
+-------------------------------------
+  # Maven으로 실행 (Windows)
+  .\mvnw.cmd spring-boot:run
+
+  # Maven으로 실행 (Linux/Mac)
+  ./mvnw spring-boot:run
+
+  # JAR 파일로 실행
+  java -jar target/fnb-mini-0.0.1-SNAPSHOT.jar
+
+  # 서버 정보
+  - Port    : 18080
+  - URL     : http://localhost:18080
+  - Profile : default
+
+-------------------------------------
+4. 자주 쓰는 명령어
+-------------------------------------
+  # 클린 빌드
+  .\mvnw.cmd clean package
+
+  # 의존성 트리 확인
+  .\mvnw.cmd dependency:tree
+
+  # 테스트만 실행
+  .\mvnw.cmd test
+
+-------------------------------------
+5. 전체 실행 순서 (Quick Start)
+-------------------------------------
+  1) docker-compose -f compose.yaml up -d
+  2) .\mvnw.cmd clean install
+  3) .\mvnw.cmd spring-boot:run
+  4) http://localhost:18080 접속 확인

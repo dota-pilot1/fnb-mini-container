@@ -1,0 +1,86 @@
+@use 'grid-detail';
+
+/* Tabulator 기본 오버라이드 */
+.tabulator {
+  border: 1px solid #ddd;
+  font-size: 13px;
+
+  .tabulator-header {
+    background: #f5f5f5;
+    border-bottom: 1px solid #ddd;
+
+    .tabulator-col {
+      border-right: 1px solid #ddd;
+
+      .tabulator-col-content {
+        padding: 6px 8px;
+      }
+
+      .tabulator-col-title {
+        font-weight: 600;
+        font-size: 13px;
+        color: #333;
+      }
+    }
+  }
+
+  .tabulator-tableholder {
+    .tabulator-table {
+      .tabulator-row {
+        border-bottom: 1px solid #eee;
+        min-height: 32px;
+
+        &:hover {
+          background-color: #f0f7ff;
+        }
+
+        &.tabulator-selected {
+          background-color: #e3f0fc;
+        }
+
+        .tabulator-cell {
+          padding: 4px 8px;
+          border-right: 1px solid #eee;
+        }
+      }
+    }
+  }
+
+  .tabulator-footer {
+    background: #f9f9f9;
+    border-top: 1px solid #ddd;
+    padding: 4px 8px;
+
+    .tabulator-paginator {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .tabulator-page {
+      padding: 2px 8px;
+      border: 1px solid #ccc;
+      border-radius: 3px;
+      background: #fff;
+      cursor: pointer;
+      font-size: 12px;
+
+      &:hover {
+        background: #f0f0f0;
+      }
+
+      &.active {
+        background: #2c6fbb;
+        color: #fff;
+        border-color: #2c6fbb;
+      }
+    }
+
+    .tabulator-page-size {
+      padding: 2px 4px;
+      border: 1px solid #ccc;
+      border-radius: 3px;
+      font-size: 12px;
+    }
+  }
+}

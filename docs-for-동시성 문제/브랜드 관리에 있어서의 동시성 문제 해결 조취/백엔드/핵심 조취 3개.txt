@@ -1,0 +1,121 @@
+================================================================
+브랜드 관리 백엔드 — 동시성 문제 해결 핵심 조취 3개
+================================================================
+
+브랜드 마스터는 관리자 몇 명이 쓰는 데이터.
+재고/주문처럼 수만 명이 동시에 몰리는 상황은 아님.
+그래서 아래 3가지 조취만으로 충분함.
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+1. 트랜잭션 분리 (외부 API를 TX 밖으로)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+■ 문제
+  하나의 @Transactional 안에서 DB 저장 + 외부 API 호출
+  → 외부 API 응답 3~6초 동안 DB 커넥션 점유
+  → HikariCP 풀 고갈 → 시스템 마비
+
+■ 해결
+  saveBrands()에서 3단계로 분리:
+
+  1차: self.saveBrandsToDb()           ← @Transactional (DB 저장, ~50ms)
+                                         커밋 → 커넥션 즉시 반환
+
+  2차: syncService.syncToExternalApi() ← TX 없음 (외부 API 호출, ~3-6초)
+                                         커넥션 점유 없음!
+
+  3차: self.updateSyncResults()        ← @Transactional (결과 반영, ~30ms)
+                                         커밋 → 커넥션 반환
+
+  커넥션 점유: 6초 → 80ms (75배 개선)
+
+■ 주의
+  - saveBrands() 자체에는 @Transactional 붙이면 안 됨
+  - self.saveBrandsToDb() 로 호출해야 AOP 프록시 거침 (self-proxy 패턴)
+
+■ 파일
+  - BrandService.java      : saveBrands() (오케스트레이터)
+  - BrandSyncService.java  : syncToExternalApi() (TX 없음)
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+2. 낙관적 락 (version 컬럼으로 동시 수정 충돌 감지)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+■ 문제
+  사용자 A, B가 동시에 같은 브랜드 수정
+  → 나중에 저장한 사람이 먼저 저장한 사람의 변경을 덮어씀 (Lost Update)
+
+■ 해결
+  brand 테이블에 version 컬럼 (정수, 수정할 때마다 +1)
+
+  UPDATE brand
+     SET ..., version = version + 1
+   WHERE id = #{id}
+     AND version = #{version}    ← 내가 읽었던 버전과 같을 때만!
+
+  → 0행 업데이트 = 누가 먼저 수정함 → 예외 → "새로고침 후 다시 시도하세요"
+
+■ 왜 낙관적 락?
+  - 비관적 락(SELECT FOR UPDATE)은 트랜잭션 끝날 때까지 행 잠금
+  - 외부 API 3~6초 동안 잠가두면 커넥션 점유 문제가 다시 생김
+  - 낙관적 락은 UPDATE 시점에만 비교하므로 커넥션 점유 최소
+
+■ 파일
+  - BrandMapper.xml   : updateBrandWithVersion (WHERE version = #{version})
+  - BrandService.java : updated == 0 → BrandException
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+3. 이력 테이블 (동기화 결과 기록 + 상태 추적 + 재시도)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+■ 문제
+  외부 API 실패해도 추적 불가
+  → 뭐가 실패했는지, 왜 실패했는지 모름
+  → 재시도 대상을 찾을 수 없음
+
+■ 해결 (두 가지)
+
+  a) brand 테이블에 상태 컬럼 추가:
+     - sync_status: NONE → PENDING → SUCCESS / FAILED
+     - sync_retry_count: 재시도 횟수 (max 3)
+     - last_sync_error: 마지막 에러 메시지
+
+  b) brand_sync_history 이력 테이블:
+     - 매 동기화 시도마다 1행 INSERT
+     - request_payload: 외부 API로 보낸 JSON
+     - response_payload: 외부 API에서 받은 JSON
+     - error_message: 에러 내용
+
+■ 활용
+  - FAILED 상태 → 스케줄러 5분마다 자동 재시도 (max 3회)
+  - FAILED 상태 → 관리자 수동 재시도 (POST /api/brands/{id}/retry)
+  - 이력 테이블 → 로그 안 뒤져도 에러 원인 즉시 확인
+
+■ 파일
+  - schema.sql             : brand(sync_status, sync_retry_count 등)
+                             brand_sync_history 테이블
+  - BrandService.java      : updateSyncResults() (3차)
+  - BrandSyncScheduler.java: 5분마다 자동 재시도
+  - ShopApiClient.java     : request/response 페이로드 수집
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+재고/주문이 엮이면 추가로 필요한 것들 (지금은 해당 없음)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  - 비관적 락 (SELECT FOR UPDATE): 재고 동시 차감 방지
+  - 멱등성 키: 중복 주문/결제 방지
+  - 보상 트랜잭션: 외부 결제 성공 → 내부 실패 시 환불 처리
+  - 서킷 브레이커: 외부 API 장시간 다운 시 호출 차단
+  - 지수 백오프: 재시도 간격 점진 증가 (1분 → 5분 → 30분)

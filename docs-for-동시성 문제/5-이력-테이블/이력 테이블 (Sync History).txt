@@ -1,0 +1,96 @@
+================================================================
+이력 테이블 (brand_sync_history)
+================================================================
+
+■ 목적
+
+  외부 API 호출의 전체 이력을 기록하여:
+  1. 실패 원인 추적 (요청/응답 페이로드 보존)
+  2. 재시도 이력 확인 (몇 번 시도했고, 각각 결과가 뭔지)
+  3. 감사(Audit) 로그로 활용
+  4. 디버깅 시 로그 안 뒤져도 됨
+
+
+■ 테이블 구조
+
+  CREATE TABLE brand_sync_history (
+      id                BIGSERIAL PRIMARY KEY,
+      brand_id          BIGINT       NOT NULL REFERENCES brand(id),
+      sync_type         VARCHAR(20)  NOT NULL,   -- REGISTER / UPDATE
+      sync_status       VARCHAR(20)  NOT NULL,   -- PENDING / SUCCESS / FAILED
+      request_payload   TEXT,                     -- 외부 API로 보낸 JSON
+      response_payload  TEXT,                     -- 외부 API에서 받은 JSON
+      error_message     VARCHAR(500),             -- 에러 메시지
+      created_at        TIMESTAMP    NOT NULL DEFAULT NOW(),
+      completed_at      TIMESTAMP
+  );
+
+
+■ 기록 시점
+
+  TX#2 (updateSyncResults)에서 외부 API 결과를 받은 후:
+
+  BrandService.java:
+    BrandSyncHistory history = new BrandSyncHistory();
+    history.setBrandId(result.getBrandId());
+    history.setSyncType(result.getSyncType());        // REGISTER or UPDATE
+    history.setSyncStatus(status);                    // SUCCESS or FAILED
+    history.setRequestPayload(result.getRequestPayload());   // 보낸 JSON
+    history.setResponsePayload(result.getResponsePayload()); // 받은 JSON
+    history.setErrorMessage(error);                   // 에러 시 메시지
+    brandMapper.insertSyncHistory(history);
+
+
+■ 데이터 예시
+
+  성공 케이스:
+  ┌────┬──────────┬──────────┬─────────┬──────────────────────────┬───────────────────────┐
+  │ id │ brand_id │ sync_type│ status  │ request_payload          │ response_payload      │
+  ├────┼──────────┼──────────┼─────────┼──────────────────────────┼───────────────────────┤
+  │ 1  │ 5        │ REGISTER │ SUCCESS │ {"brandCode":"BR001"...} │ {"code":"0200"...}    │
+  └────┴──────────┴──────────┴─────────┴──────────────────────────┴───────────────────────┘
+
+  실패 케이스:
+  ┌────┬──────────┬──────────┬─────────┬──────────────────────────┬───────────────────────┐
+  │ id │ brand_id │ sync_type│ status  │ request_payload          │ response_payload      │
+  ├────┼──────────┼──────────┼─────────┼──────────────────────────┼───────────────────────┤
+  │ 2  │ 5        │ REGISTER │ FAILED  │ {"brandCode":"BR001"...} │ {"code":"9999"...}    │
+  │ 3  │ 5        │ REGISTER │ SUCCESS │ {"brandCode":"BR001"...} │ {"code":"0200"...}    │
+  └────┴──────────┴──────────┴─────────┴──────────────────────────┴───────────────────────┘
+  → id=2에서 실패, id=3에서 재시도 성공 (이력이 쌓임)
+
+
+■ request/response 페이로드 보존의 가치
+
+  실무에서는 외부 API 실패 시:
+  - "뭘 보냈는데 실패했지?" → request_payload 확인
+  - "상대방이 뭘 응답했지?" → response_payload 확인
+  - "에러 코드가 뭐였지?" → response에서 code 확인
+
+  로그를 뒤질 필요 없이 DB 조회만으로 디버깅 가능.
+  운영 환경에서 장애 대응 시간 단축.
+
+
+■ ShopApiClient에서 페이로드 수집
+
+  ShopApiClient.java - callApi():
+    String requestPayload = objectMapper.writeValueAsString(requestBody);
+    result.setRequestPayload(requestPayload);
+
+    String responseBody = restClient.post()...retrieve().body(String.class);
+    result.setResponsePayload(responseBody);
+
+  → BrandSyncResultDto에 request/response 담아서 전달
+  → TX#2에서 history 테이블에 저장
+
+
+■ 관련 파일
+
+  - schema.sql               : brand_sync_history 테이블 DDL
+  - BrandSyncHistory.java    : 엔티티 (id, brandId, syncType, syncStatus,
+                                requestPayload, responsePayload, errorMessage,
+                                createdAt, completedAt)
+  - BrandSyncResultDto.java  : 외부 API 결과 DTO (requestPayload, responsePayload 포함)
+  - BrandMapper.xml          : insertSyncHistory (INSERT SQL)
+  - BrandService.java        : updateSyncResults()에서 이력 저장
+  - ShopApiClient.java       : callApi()에서 페이로드 수집

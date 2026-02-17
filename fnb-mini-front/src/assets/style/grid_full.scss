@@ -1,0 +1,43 @@
+/* 전체높이 그리드 레이아웃 */
+.contents-area {
+  .component:last-child {
+    margin-bottom: 0;
+  }
+}
+
+.component-wrap-2 {
+  display: flex;
+  gap: 16px;
+
+  .component {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .component-sm {
+    flex: 0 0 40%;
+  }
+
+  .component-lg {
+    flex: 0 0 58%;
+  }
+}
+
+.component-wrap-3 {
+  display: flex;
+  gap: 16px;
+
+  .component {
+    flex: 1;
+    min-width: 0;
+  }
+}
+
+.section {
+  .contents {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    overflow: hidden;
+  }
+}

@@ -1,0 +1,102 @@
+================================================================
+수동 재시도 (Manual Retry API)
+================================================================
+
+■ 목적
+
+  관리자가 UI에서 특정 브랜드의 동기화를 직접 재시도.
+  자동 스케줄러(5분 간격)를 기다리지 않고 즉시 재시도 가능.
+
+
+■ API
+
+  POST /api/brands/{id}/retry
+
+  성공 응답: { "success": true, "message": "재시도가 요청되었습니다." }
+  실패 응답: { "success": false, "message": "FAILED 상태의 브랜드만 재시도할 수 있습니다." }
+
+
+■ 핵심 코드
+
+  [BrandController.java]
+
+  @PostMapping("/{id}/retry")
+  public ApiResponse<Void> retry(@PathVariable Long id) {
+      brandService.retrySyncForBrand(id);
+      return ApiResponse.ok(null, "재시도가 요청되었습니다.");
+  }
+
+
+  [BrandService.java - retrySyncForBrand()]
+
+  public void retrySyncForBrand(Long id) {
+      Brand brand = brandMapper.selectBrandById(id);
+
+      // 검증
+      if (brand == null) {
+          throw new BrandException("브랜드를 찾을 수 없습니다: " + id);
+      }
+      if (!"FAILED".equals(brand.getSyncStatus())) {
+          throw new BrandException("FAILED 상태의 브랜드만 재시도할 수 있습니다.");
+      }
+      if (brand.getSyncRetryCount() >= 3) {
+          throw new BrandException("최대 재시도 횟수(3회)를 초과했습니다.");
+      }
+
+      // 재시도 횟수 증가
+      brandMapper.incrementSyncRetryCount(id);
+
+      // 외부 API 재호출 (TX 밖 - 커넥션 점유 없음)
+      BrandSyncResultDto result = brandSyncService.syncSingleBrand(brand);
+
+      // 결과 반영 (TX#2)
+      self.updateSyncResults(List.of(result));
+  }
+
+
+■ 검증 순서
+
+  1. 브랜드 존재 여부 확인
+  2. sync_status가 FAILED인지 확인
+     → PENDING/SUCCESS/NONE 상태는 재시도 불가
+  3. retry_count가 3 미만인지 확인
+     → 3회 이상이면 "최대 재시도 횟수 초과" 에러
+
+  모든 검증 통과 후:
+  4. retry_count + 1
+  5. 외부 API 호출 (TX 밖)
+  6. 결과 반영 (TX#2)
+
+
+■ 자동 재시도와의 관계
+
+  ┌──────────────────────────────────────────────┐
+  │            자동 재시도 (스케줄러)              │
+  │  5분마다 → selectFailedSyncBrands()          │
+  │         → retrySyncForBrand(id)  ←───────┐  │
+  └──────────────────────────────────┬─────── │──┘
+                                     │        │
+  ┌──────────────────────────────────┼────────│──┐
+  │            수동 재시도 (API)      │        │  │
+  │  POST /api/brands/{id}/retry ────┘        │  │
+  │         → retrySyncForBrand(id)  ─────────┘  │
+  └──────────────────────────────────────────────┘
+
+  자동과 수동 모두 같은 retrySyncForBrand() 메서드를 호출.
+  동일한 검증 로직과 트랜잭션 패턴 적용.
+
+
+■ 프론트엔드 연동
+
+  브랜드 그리드에서:
+  - sync_status가 FAILED인 행에 "재시도" 버튼 표시
+  - 클릭 시 POST /api/brands/{id}/retry 호출
+  - 성공 시 목록 새로고침 → sync_status가 SUCCESS로 변경
+
+
+■ 관련 파일
+
+  - BrandController.java  : retry() (POST /api/brands/{id}/retry)
+  - BrandService.java     : retrySyncForBrand() (검증 + 재시도 로직)
+  - BrandSyncService.java : syncSingleBrand() (단건 외부 API 호출)
+  - BrandMapper.xml       : incrementSyncRetryCount (횟수 증가)

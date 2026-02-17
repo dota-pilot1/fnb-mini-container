@@ -1,0 +1,99 @@
+================================================================
+트랜잭션 3분할 (Transaction Splitting)
+================================================================
+
+■ 실무 문제
+
+  @Transactional
+  savePartnerBrands() {
+      INSERT/UPDATE brand      ← ~50ms  (DB 커넥션 필요)
+      외부 API CP204 호출      ← ~3초   (커넥션 불필요인데 점유 중!)
+      외부 API CP206 호출      ← ~3초   (커넥션 불필요인데 점유 중!)
+  }
+  // 총 ~6초 커넥션 점유
+  // HikariCP 풀 10개 → 동시 10요청이면 전체 마비
+
+  문제의 핵심:
+  - @Transactional 하나로 전부 감쌌기 때문에
+    외부 API 호출 3~6초 동안 DB 커넥션을 점유
+  - HikariCP 커넥션 고갈 → 나머지 요청 전부 대기 → 시스템 마비
+
+
+■ 개선 구조 (3분할)
+
+  saveBrands() {                              ← 오케스트레이터 (TX 없음!)
+      TX#1: self.saveBrandsToDb()             ← ~50ms → 커밋 → 커넥션 반환
+      NO TX: syncService.syncToExternalApi()  ← ~6초 (커넥션 점유 없음!)
+      TX#2: self.updateSyncResults()          ← ~30ms → 커밋 → 커넥션 반환
+  }
+  // 총 커넥션 점유 ~80ms → 75배 개선!
+
+
+■ 핵심 코드 (BrandService.java)
+
+  // 오케스트레이터 - @Transactional 없음!
+  public void saveBrands(List<BrandSaveReqDto> list) {
+
+      // TX#1: DB 저장 + PENDING 마킹 (커밋 후 커넥션 즉시 반환)
+      List<Brand> savedBrands = self.saveBrandsToDb(list);
+
+      // TX 밖: 외부 API 호출 (DB 커넥션 점유 없음!)
+      List<BrandSyncResultDto> syncResults =
+          brandSyncService.syncToExternalApi(savedBrands);
+
+      // TX#2: 동기화 결과 반영 (새 커넥션 획득 → 커밋 → 반환)
+      self.updateSyncResults(syncResults);
+  }
+
+  @Transactional  // TX#1
+  public List<Brand> saveBrandsToDb(List<BrandSaveReqDto> list) {
+      // INSERT/UPDATE + sync_status='PENDING' 설정
+      // 커밋되면 커넥션이 풀로 반환됨
+  }
+
+  // TX 없음 - BrandSyncService.java
+  public List<BrandSyncResultDto> syncToExternalApi(List<Brand> brands) {
+      // 외부 API 호출 (ShopApiClient)
+      // DB 커넥션 점유 없이 HTTP 통신만
+  }
+
+  @Transactional  // TX#2
+  public void updateSyncResults(List<BrandSyncResultDto> results) {
+      // sync_status를 SUCCESS/FAILED로 업데이트
+      // brand_sync_history에 이력 저장
+  }
+
+
+■ 커넥션 점유 비교
+
+  ┌──────────────────────────────────────────────────┐
+  │ [실무 - 문제]                                     │
+  │ ████████████████████████████████████ (~6초 점유)  │
+  │ DB저장   외부API CP204    외부API CP206           │
+  │ ← 전부 하나의 트랜잭션 안 →                       │
+  └──────────────────────────────────────────────────┘
+
+  ┌──────────────────────────────────────────────────┐
+  │ [개선 - 3분할]                                    │
+  │ ██ (~50ms)                        ██ (~30ms)     │
+  │ TX#1     ← 커넥션 없음 ~6초 →     TX#2           │
+  │          외부 API 호출                            │
+  └──────────────────────────────────────────────────┘
+
+
+■ 관련 파일
+
+  - BrandService.java     : saveBrands() (오케스트레이터)
+                            saveBrandsToDb() (TX#1)
+                            updateSyncResults() (TX#2)
+  - BrandSyncService.java : syncToExternalApi() (TX 없음)
+  - ShopApiClient.java    : registerBrand(), updateBrand() (HTTP 호출)
+
+
+■ 주의사항
+
+  - saveBrands()에 @Transactional 붙이면 안 됨 (전체가 하나의 TX가 됨)
+  - self.saveBrandsToDb() 호출해야 AOP 프록시를 거침 (→ 3-self-proxy-패턴 참고)
+  - TX#1 커밋 후 외부 API 실패해도 DB에는 PENDING 상태로 남아있음
+    → TX#2에서 FAILED로 업데이트 + 이력 저장
+    → 스케줄러가 자동 재시도 (→ 6-자동-재시도 참고)

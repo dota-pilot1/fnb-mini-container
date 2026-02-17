@@ -1,0 +1,14 @@
+services:
+  postgres:
+    image: 'postgres:15'
+    environment:
+      - 'POSTGRES_DB=externaldb'
+      - 'POSTGRES_PASSWORD=external123'
+      - 'POSTGRES_USER=external'
+    ports:
+      - '15433:5432'
+    volumes:
+      - pgdata_external:/var/lib/postgresql/data
+
+volumes:
+  pgdata_external:

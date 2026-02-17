@@ -1,0 +1,135 @@
+================================================================
+Self-Proxy 패턴 (@Lazy @Autowired self)
+================================================================
+
+■ 문제
+
+  Spring @Transactional은 AOP 프록시를 통해 동작한다.
+  같은 클래스 안에서 this.saveBrandsToDb()를 호출하면
+  프록시를 거치지 않아 @Transactional이 무시된다!
+
+  @Service
+  public class BrandService {
+
+      public void saveBrands() {
+          this.saveBrandsToDb();       // ← 프록시 안 거침! TX 없음!
+      }
+
+      @Transactional
+      public List<Brand> saveBrandsToDb() { ... }
+  }
+
+  → saveBrandsToDb()에 @Transactional이 있지만 실제로는 적용 안 됨
+  → 트랜잭션 3분할 자체가 무의미해짐
+
+
+■ 해결: Self-Proxy 주입
+
+  @Service
+  public class BrandService {
+
+      @Lazy
+      @Autowired
+      private BrandService self;      // ← 자기 자신의 프록시를 주입
+
+      public void saveBrands() {
+          self.saveBrandsToDb();       // ← 프록시를 거침! TX 정상!
+      }
+
+      @Transactional
+      public List<Brand> saveBrandsToDb() { ... }
+  }
+
+  → self는 Spring AOP 프록시 객체
+  → self.saveBrandsToDb() 호출 시 프록시 → @Transactional 적용!
+
+
+■ @Lazy가 필요한 이유
+
+  Spring Boot 3.x에서는 순환참조(circular dependency)가 기본 금지.
+  BrandService가 자기 자신을 주입받으면 순환참조 에러 발생.
+
+  @Lazy를 붙이면:
+  → 빈 생성 시점에는 프록시 껍데기만 주입
+  → 실제 사용 시점에 진짜 빈을 가져옴
+  → 순환참조 회피
+
+
+■ 호출 흐름 비교
+
+  [this 호출 - 잘못된 방식]
+
+  클라이언트 → Controller → BrandService.saveBrands()
+                                  │
+                                  ├→ this.saveBrandsToDb()
+                                  │   (프록시 안 거침, @Transactional 무시!)
+                                  │
+                                  └→ this.updateSyncResults()
+                                      (프록시 안 거침, @Transactional 무시!)
+
+
+  [self 호출 - 올바른 방식]
+
+  클라이언트 → Controller → BrandService.saveBrands()
+                                  │
+                                  ├→ self.saveBrandsToDb()
+                                  │   → Spring AOP Proxy
+                                  │   → @Transactional 적용!
+                                  │   → 새 커넥션 획득 → 커밋 → 반환
+                                  │
+                                  └→ self.updateSyncResults()
+                                      → Spring AOP Proxy
+                                      → @Transactional 적용!
+                                      → 새 커넥션 획득 → 커밋 → 반환
+
+
+■ 핵심 코드 (BrandService.java)
+
+  @Slf4j
+  @Service
+  @RequiredArgsConstructor
+  public class BrandService {
+
+      private final BrandMapper brandMapper;
+      private final BrandSyncService brandSyncService;
+
+      /**
+       * self 주입 패턴
+       * @Lazy: 순환참조 회피 (실제 사용 시점까지 프록시 생성 지연)
+       */
+      @Lazy
+      @Autowired
+      private BrandService self;
+
+      // 오케스트레이터 (TX 없음)
+      public void saveBrands(List<BrandSaveReqDto> list) {
+          List<Brand> savedBrands = self.saveBrandsToDb(list);       // TX#1
+          List<BrandSyncResultDto> results = ...;                     // NO TX
+          self.updateSyncResults(results);                            // TX#2
+      }
+
+      @Transactional   // self를 통해 호출되어야 적용됨
+      public List<Brand> saveBrandsToDb(...) { ... }
+
+      @Transactional   // self를 통해 호출되어야 적용됨
+      public void updateSyncResults(...) { ... }
+  }
+
+
+■ 대안 (참고용)
+
+  1. 별도 서비스 분리: saveBrandsToDb()를 다른 @Service 클래스로 이동
+     → 자연스럽게 프록시를 거침. 하지만 같은 도메인 로직이 분산됨.
+
+  2. TransactionTemplate 수동 사용:
+     → 프록시 없이도 트랜잭션 제어 가능. 하지만 코드가 장황해짐.
+
+  3. ApplicationContext.getBean():
+     → self 주입과 같은 효과. 하지만 테스트하기 어려움.
+
+
+■ 관련 파일
+
+  - BrandService.java : @Lazy @Autowired private BrandService self (라인 64-66)
+                        self.saveBrandsToDb() (라인 97)
+                        self.updateSyncResults() (라인 112)

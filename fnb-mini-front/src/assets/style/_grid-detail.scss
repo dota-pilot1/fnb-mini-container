@@ -1,0 +1,104 @@
+/* 그리드 타이틀 영역 */
+.grid-title-total {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 0;
+
+  .grid-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+
+    .in-title {
+      font-weight: 600;
+      font-size: 14px;
+    }
+
+    .total-count {
+      font-size: 13px;
+      color: #666;
+
+      strong {
+        color: #333;
+        font-weight: 600;
+      }
+    }
+  }
+
+  .grid-btn-area {
+    display: flex;
+    gap: 4px;
+
+    button {
+      padding: 4px 12px;
+      font-size: 12px;
+      border: 1px solid #ccc;
+      border-radius: 3px;
+      background: #fff;
+      cursor: pointer;
+
+      &:hover {
+        background: #f5f5f5;
+      }
+
+      &.btn-primary {
+        background: #2c6fbb;
+        color: #fff;
+        border-color: #2c6fbb;
+
+        &:hover {
+          background: #245ca0;
+        }
+      }
+    }
+  }
+}
+
+/* 행 상태 마킹 */
+.grid-marking-row-add {
+  background-color: #e8f5e9 !important;
+}
+
+.grid-marking-row-modify {
+  background-color: #fff3e0 !important;
+}
+
+.grid-marking-row-delete {
+  background-color: #ffebee !important;
+  text-decoration: line-through;
+  color: #999;
+}
+
+/* 셀 마킹 */
+.marking-cell {
+  outline: 2px solid #2c6fbb;
+  outline-offset: -2px;
+}
+
+/* 링크 스타일 */
+.link-underline {
+  text-decoration: underline;
+  color: #2c6fbb;
+  cursor: pointer;
+}
+
+/* 필수 표시 */
+.tabulator-col-title.required::after {
+  content: ' *';
+  color: #ef151e;
+}
+
+/* 폰트 유틸 */
+.fc-gray {
+  color: #999;
+}
+
+.fw-bold {
+  font-weight: 600;
+}
+
+/* hide 유틸 */
+.hide {
+  display: none !important;
+}

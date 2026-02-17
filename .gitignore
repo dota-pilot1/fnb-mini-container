@@ -1,0 +1,31 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+fnb-mini-back/target/
+fnb-mini-front/dist/
+fnb-external-api/dist/
+
+# IDE
+.idea/
+*.iml
+.vscode/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Env
+.env
+.env.*
+
+# Logs
+*.log
+
+# TypeScript build artifacts
+fnb-external-api/*.js
+fnb-external-api/*.js.map
+fnb-external-api/*.d.ts
+!fnb-external-api/eslint.config.mjs
+fnb-external-api/tsconfig.build.tsbuildinfo

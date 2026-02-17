@@ -1,0 +1,35 @@
+server:
+  port: 18080
+
+spring:
+  application:
+    name: fnb-mini
+  sql:
+    init:
+      mode: always
+  datasource:
+    url: jdbc:postgresql://localhost:15432/fnbmini
+    username: fnbmini
+    password: fnbmini123
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: 5
+      minimum-idle: 2
+      connection-timeout: 3000
+
+mybatis:
+  mapper-locations: classpath:mappers/**/*.xml
+  configuration:
+    map-underscore-to-camel-case: true
+
+external-api:
+  base-url: http://localhost:18090
+
+jwt:
+  secret: fnb-mini-practice-secret-key-for-jwt-signing-minimum-256-bits!!
+  expiration: 86400000  # 24시간
+
+logging:
+  level:
+    com.cj.fnbmini: DEBUG
+    org.mybatis: DEBUG

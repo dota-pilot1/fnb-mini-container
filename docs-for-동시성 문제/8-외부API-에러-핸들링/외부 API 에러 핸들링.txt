@@ -1,0 +1,126 @@
+================================================================
+외부 API 에러 핸들링
+================================================================
+
+■ 실무 문제
+
+  실무에서 외부 API 호출 후:
+  - 응답 코드(code)를 검증하지 않았음
+  - API가 에러 응답(code: "9999")을 보내도 DB에는 성공으로 커밋
+  - 네트워크 에러 시 catch 없이 전체 트랜잭션 롤백 → 모든 변경 손실
+
+
+■ 개선: 3단계 에러 핸들링
+
+  1. 응답 코드 검증: 0xxx → 성공, 그 외 → 실패
+  2. 네트워크 에러 catch: 예외 잡아서 FAILED 처리 (롤백 방지)
+  3. 에러 정보 보존: request/response 페이로드 + 에러 메시지 저장
+
+
+■ 핵심 코드 (ShopApiClient.java)
+
+  private BrandSyncResultDto callApi(Brand brand, String syncType,
+                                      String path, String method) {
+      BrandSyncResultDto result = new BrandSyncResultDto();
+      result.setBrandId(brand.getId());
+      result.setSyncType(syncType);
+
+      try {
+          // 요청 페이로드 저장
+          String requestPayload = objectMapper.writeValueAsString(requestBody);
+          result.setRequestPayload(requestPayload);
+
+          // HTTP 호출
+          String responseBody = restClient.post()
+              .uri(path)
+              .body(requestBody)
+              .retrieve()
+              .body(String.class);
+
+          result.setResponsePayload(responseBody);
+
+          // ★ 응답 코드 검증 (실무에서 빠져있던 핵심 개선)
+          Map<String, Object> response = objectMapper.readValue(responseBody, Map.class);
+          String code = (String) response.get("code");
+
+          if (code != null && code.startsWith("0")) {
+              // 0200, 0201 → 성공
+              result.setSuccess(true);
+          } else {
+              // 9999 등 → 외부 시스템에서 에러 반환
+              String message = (String) response.get("message");
+              result.setSuccess(false);
+              result.setErrorMessage(message);
+          }
+
+      } catch (Exception e) {
+          // ★ 네트워크 에러 등 → 예외를 잡아서 FAILED 처리
+          //   실무에서는 이걸 안 잡아서 전체 TX 롤백됨
+          result.setSuccess(false);
+          result.setErrorMessage(e.getMessage());
+          result.setResponsePayload(
+              "{\"code\":\"9999\",\"message\":\"" + e.getMessage() + "\"}");
+      }
+
+      return result;
+  }
+
+
+■ 에러 시나리오별 처리
+
+  ┌─────────────────────┬──────────────────────────────────────┐
+  │ 시나리오             │ 처리                                 │
+  ├─────────────────────┼──────────────────────────────────────┤
+  │ 외부 API 정상 응답   │ code "0200" → SUCCESS                │
+  │ (code: "0200")      │                                      │
+  ├─────────────────────┼──────────────────────────────────────┤
+  │ 외부 API 에러 응답   │ code "9999" → FAILED                 │
+  │ (code: "9999")      │ + error_message에 응답 메시지 저장    │
+  ├─────────────────────┼──────────────────────────────────────┤
+  │ 네트워크 타임아웃    │ catch → FAILED                       │
+  │                     │ + error_message에 "Connection timed  │
+  │                     │   out" 저장                           │
+  ├─────────────────────┼──────────────────────────────────────┤
+  │ 외부 서버 다운       │ catch → FAILED                       │
+  │ (Connection refused) │ + error_message에 에러 메시지 저장   │
+  ├─────────────────────┼──────────────────────────────────────┤
+  │ JSON 파싱 에러       │ catch → FAILED                       │
+  │                     │ + error_message에 파싱 에러 저장      │
+  └─────────────────────┴──────────────────────────────────────┘
+
+  공통: 절대 예외를 throw하지 않음
+  → BrandSyncResultDto에 success=false + errorMessage를 담아 반환
+  → TX#2에서 brand.sync_status='FAILED'로 업데이트
+  → brand_sync_history에 이력 기록
+  → 스케줄러가 자동 재시도 가능
+
+
+■ 실무 vs 개선 비교
+
+  [실무 - 문제]
+  @Transactional
+  saveBrands() {
+      insertBrand();                    // DB 저장
+      middlewareApi.sendRequest();      // 외부 API (에러 시 전체 롤백!)
+      // → 응답 코드 검증 없음
+      // → 네트워크 에러 시 catch 없음 → RuntimeException → 전체 롤백
+      // → DB에 저장했던 것까지 날아감
+  }
+
+  [개선 - 에러 격리]
+  saveBrands() {
+      self.saveBrandsToDb();            // TX#1: DB 저장 → 커밋 (안전!)
+      syncService.syncToExternalApi();  // TX 밖: 에러 나도 DB 영향 없음
+      self.updateSyncResults();         // TX#2: 결과만 기록
+  }
+
+  핵심: 외부 API 에러가 DB 저장에 영향을 주지 않음.
+  DB 데이터는 안전하고, 동기화만 나중에 재시도하면 됨.
+
+
+■ 관련 파일
+
+  - ShopApiClient.java     : callApi() (응답 코드 검증 + try-catch)
+  - BrandSyncResultDto.java: success, errorMessage, requestPayload, responsePayload
+  - BrandService.java      : updateSyncResults() (FAILED 처리 + 이력 저장)
+  - BrandMapper.xml        : updateSyncStatus (sync_status + last_sync_error 업데이트)

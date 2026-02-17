@@ -1,0 +1,113 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+  "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.cj.fnbmini.brand.BrandMapper">
+
+    <!-- 목록 조회 (동적 검색) -->
+    <select id="selectBrandList" parameterType="com.cj.fnbmini.brand.dto.BrandSearchDto"
+            resultType="com.cj.fnbmini.brand.entity.Brand">
+        SELECT id, brand_code, brand_name, brand_name_en, brand_desc, use_yn,
+               sync_status, sync_retry_count, last_sync_at, last_sync_error,
+               version, reg_id, reg_dttm, upd_id, upd_dttm
+          FROM brand
+         WHERE 1 = 1
+        <if test="brandCode != null and brandCode != ''">
+           AND brand_code LIKE '%' || #{brandCode} || '%'
+        </if>
+        <if test="brandName != null and brandName != ''">
+           AND brand_name LIKE '%' || #{brandName} || '%'
+        </if>
+        <if test="useYn != null and useYn != ''">
+           AND use_yn = #{useYn}
+        </if>
+        <if test="syncStatus != null and syncStatus != ''">
+           AND sync_status = #{syncStatus}
+        </if>
+         ORDER BY id DESC
+    </select>
+
+    <!-- 단건 조회 -->
+    <select id="selectBrandById" resultType="com.cj.fnbmini.brand.entity.Brand">
+        SELECT id, brand_code, brand_name, brand_name_en, brand_desc, use_yn,
+               sync_status, sync_retry_count, last_sync_at, last_sync_error,
+               version, reg_id, reg_dttm, upd_id, upd_dttm
+          FROM brand
+         WHERE id = #{id}
+    </select>
+
+    <!-- 등록 (sync_status = PENDING) -->
+    <insert id="insertBrand" parameterType="com.cj.fnbmini.brand.entity.Brand"
+            useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO brand (brand_code, brand_name, brand_name_en, brand_desc,
+                           use_yn, sync_status, version, reg_id, reg_dttm)
+        VALUES (#{brandCode}, #{brandName}, #{brandNameEn}, #{brandDesc},
+                #{useYn}, 'PENDING', 0, #{regId}, NOW())
+    </insert>
+
+    <!-- 수정 (기본 - 낙관적 락 없이) -->
+    <update id="updateBrand" parameterType="com.cj.fnbmini.brand.entity.Brand">
+        UPDATE brand
+           SET brand_name = #{brandName},
+               brand_name_en = #{brandNameEn},
+               brand_desc = #{brandDesc},
+               use_yn = #{useYn},
+               sync_status = 'PENDING',
+               upd_id = #{updId},
+               upd_dttm = NOW()
+         WHERE id = #{id}
+    </update>
+
+    <!-- 수정 (낙관적 락 - version 체크) -->
+    <update id="updateBrandWithVersion" parameterType="com.cj.fnbmini.brand.entity.Brand">
+        UPDATE brand
+           SET brand_name = #{brandName},
+               brand_name_en = #{brandNameEn},
+               brand_desc = #{brandDesc},
+               use_yn = #{useYn},
+               sync_status = 'PENDING',
+               version = version + 1,
+               upd_id = #{updId},
+               upd_dttm = NOW()
+         WHERE id = #{id}
+           AND version = #{version}
+    </update>
+
+    <!-- 동기화 상태 업데이트 -->
+    <update id="updateSyncStatus">
+        UPDATE brand
+           SET sync_status = #{syncStatus},
+               last_sync_at = NOW(),
+               last_sync_error = #{lastSyncError},
+               upd_dttm = NOW()
+         WHERE id = #{id}
+    </update>
+
+    <!-- 실패 브랜드 조회 (재시도 대상) -->
+    <select id="selectFailedSyncBrands" resultType="com.cj.fnbmini.brand.entity.Brand">
+        SELECT id, brand_code, brand_name, brand_name_en, brand_desc, use_yn,
+               sync_status, sync_retry_count, last_sync_at, last_sync_error,
+               version, reg_id, reg_dttm, upd_id, upd_dttm
+          FROM brand
+         WHERE sync_status = 'FAILED'
+           AND sync_retry_count &lt; 3
+         ORDER BY upd_dttm ASC
+    </select>
+
+    <!-- 동기화 이력 저장 -->
+    <insert id="insertSyncHistory" parameterType="com.cj.fnbmini.brand.entity.BrandSyncHistory"
+            useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO brand_sync_history (brand_id, sync_type, sync_status,
+               request_payload, response_payload, error_message, created_at)
+        VALUES (#{brandId}, #{syncType}, #{syncStatus},
+                #{requestPayload}, #{responsePayload}, #{errorMessage}, NOW())
+    </insert>
+
+    <!-- 재시도 횟수 증가 -->
+    <update id="incrementSyncRetryCount">
+        UPDATE brand
+           SET sync_retry_count = sync_retry_count + 1
+         WHERE id = #{id}
+    </update>
+
+</mapper>
