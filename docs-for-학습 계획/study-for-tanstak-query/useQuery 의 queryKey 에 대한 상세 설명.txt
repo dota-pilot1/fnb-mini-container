@@ -1,0 +1,37 @@
+네 맞아요. 정확히 이해하셨습니다.
+
+brandKeys 는 그냥 키 문자열 공장입니다. TanStack Query가 특별히 인식하는 게 아니라, 그냥 배열을 만들어주는 함수 모음입니다.
+export const brandKeys = {
+  all:  ['brands'],                            // 그냥 배열
+  list: (params) => ['brands', 'list', params], // 그냥 배열 반환 함수
+}
+
+캐싱은 useQuery에 queryKey로 넘기는 순간부터 TanStack Query가 담당합니다.
+useQuery({
+  queryKey: brandKeys.list(params),  // ← 이 배열이 캐시의 "이름표"
+  queryFn: () => fetchBrandList(params),
+})
+
+내부적으로 이렇게 동작합니다:
+첫 번째 조회 (params: { brandCode: 'A001' })
+  queryKey = ['brands', 'list', { brandCode: 'A001' }]
+  캐시에 없음 → 서버 요청 → 응답을 이 키로 저장
+
+두 번째 조회 (params 동일)
+  queryKey = ['brands', 'list', { brandCode: 'A001' }]  ← 같은 키
+  캐시에 있음 → 서버 요청 없이 캐시에서 반환
+
+세 번째 조회 (params: { brandCode: 'B002' })
+  queryKey = ['brands', 'list', { brandCode: 'B002' }]  ← 다른 키
+  캐시에 없음 → 서버 요청 → 새 키로 저장
+
+all: ['brands'] 는 왜 있나? invalidateQueries에서 계층적으로 무효화할 때 씁니다.
+
+// 저장 성공 후
+queryClient.invalidateQueries({ queryKey: brandKeys.all })
+// → ['brands'] 로 시작하는 모든 캐시 무효화
+// → ['brands', 'list', { brandCode: 'A001' }] ✓ 삭제
+// → ['brands', 'list', { brandCode: 'B002' }] ✓ 삭제
+// → ['brands', 'detail', 1]                   ✓ 삭제 (나중에 추가돼도 자동 포함)
+
+즉 brandKeys는 캐시 키를 오타 없이 일관되게 만들기 위한 상수 모음이고, 실제 캐싱은 전부 TanStack Query가 합니다.

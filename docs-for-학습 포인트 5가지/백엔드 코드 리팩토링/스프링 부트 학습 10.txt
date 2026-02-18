@@ -1,5 +1,5 @@
 ================================================================
-실무 백엔드(Spring Boot + MyBatis) 이해를 위한 핵심 10가지
+실무 백엔드(Spring Boot + MyBatis) 이해를 위한 핵심 20가지
 ================================================================
 
 ================================================================
@@ -136,5 +136,138 @@
   핵심 질문:
     "@Async 메서드가 같은 클래스 안에 있으면 왜 동작 안 하는가?"
     (→ @Transactional과 같은 이유: 프록시 Self-Invocation 문제)
+
+================================================================
+실무 심화 (11~20)
+================================================================
+
+11. 낙관적 락 vs 비관적 락
+----------------------------------------------------------------
+  - 비관적 락 (SELECT FOR UPDATE)
+      → "내가 읽는 순간 다른 트랜잭션 접근 차단"
+      → DB 레벨에서 물리적으로 잠금
+      → 충돌이 자주 발생하는 경우 적합 (정산, 재고 차감)
+  - 낙관적 락 (@Version)
+      → 잠금 없이 읽고, 저장 시 버전 비교
+      → 버전 불일치 시 OptimisticLockException 발생 → 재시도
+      → 충돌이 드문 경우 적합 (브랜드 수정 등)
+  - 현업 활용: 브랜드 동시 수정 방지에 @Version 적용
+
+  핵심 질문:
+    "낙관적 락은 DB에 잠금을 걸지 않는데 어떻게 동시성을 보장하는가?"
+
+
+12. Spring AOP 개념
+----------------------------------------------------------------
+  - @Transactional, @Async, @Scheduled 모두 AOP 기반 프록시로 동작
+  - Advice(언제), Pointcut(어디서), JoinPoint(실행 지점)
+  - @Around, @Before, @After
+  - 실무 활용: 공통 로깅, 실행 시간 측정, 권한 체크
+  - Self-Invocation 문제의 근본 원인이 AOP 프록시 구조
+
+  핵심 질문:
+    "@Transactional이 프록시로 동작한다는 게 정확히 무슨 의미인가?"
+
+
+13. MyBatis 동적 SQL
+----------------------------------------------------------------
+  - <if test="...">     : 조건부 SQL
+  - <choose><when>      : switch-case 패턴
+  - <foreach>           : IN 절, 배열 반복
+  - <where>, <set>      : 앞뒤 공백/쉼표 자동 처리
+  - 현업 활용: 검색 조건이 가변적인 관리자 조회 쿼리
+
+  핵심 질문:
+    "<where> 태그가 없으면 동적 조건에서 어떤 문제가 생기는가?"
+
+
+14. 공통 응답 포맷 + @RestControllerAdvice
+----------------------------------------------------------------
+  - 모든 API 응답을 일관된 구조로 감쌈
+    예) { "code": "200", "message": "OK", "data": {...} }
+  - @RestControllerAdvice: 전역 예외를 잡아서 공통 에러 응답 반환
+  - 현업에서 프론트가 항상 같은 구조를 기대하므로 필수 패턴
+
+  핵심 질문:
+    "@ControllerAdvice와 @RestControllerAdvice의 차이는?"
+
+
+15. Spring Boot 자동설정 (AutoConfiguration)
+----------------------------------------------------------------
+  - spring-boot-starter-* 의존성 추가만으로 설정 없이 동작하는 이유
+  - @EnableAutoConfiguration → spring.factories → 조건부 빈 등록
+  - @ConditionalOnClass, @ConditionalOnMissingBean
+  - application.yml로 자동설정 값 오버라이드 가능
+
+  핵심 질문:
+    "DataSource 설정을 application.yml에만 써도 DB 연결이 되는 이유는?"
+
+
+16. 페이징 처리 (MyBatis + LIMIT/OFFSET)
+----------------------------------------------------------------
+  - 관리자 그리드에서 필수
+  - MyBatis에서 페이징 쿼리:
+      SELECT * FROM table LIMIT #{size} OFFSET #{offset}
+  - 전체 건수 쿼리(COUNT)와 목록 쿼리 2번 실행
+  - PageHelper 플러그인으로 자동 처리 가능
+  - offset = (page - 1) * size
+
+  핵심 질문:
+    "페이지 번호가 뒤로 갈수록 OFFSET 방식이 느려지는 이유는?"
+
+
+17. 환경별 설정 (Profiles)
+----------------------------------------------------------------
+  - application.yml, application-dev.yml, application-prod.yml
+  - spring.profiles.active=dev 로 활성 프로파일 지정
+  - DB URL, 외부 API URL, 로그 레벨을 환경별로 다르게
+  - 현업: 개발 서버 / 스테이징 / 운영 환경 분리
+
+  핵심 질문:
+    "운영 환경에서 DB 비밀번호를 application.yml에 직접 쓰면 안 되는 이유는?"
+
+
+18. Lombok 주요 어노테이션
+----------------------------------------------------------------
+  - @Getter / @Setter          : getter/setter 자동 생성
+  - @NoArgsConstructor         : 기본 생성자
+  - @AllArgsConstructor        : 전체 필드 생성자
+  - @RequiredArgsConstructor   : final 필드 생성자 (DI에 활용)
+  - @Builder                   : 빌더 패턴
+  - @Data                      : @Getter + @Setter + @ToString + @EqualsAndHashCode
+  - @Slf4j                     : log 필드 자동 생성
+
+  핵심 질문:
+    "@Data를 Entity에 쓰면 안 되는 이유는?"
+
+
+19. Filter vs Interceptor vs AOP
+----------------------------------------------------------------
+  요청 처리 순서:
+    Filter → DispatcherServlet → Interceptor → Controller → AOP → Service
+
+  - Filter: Servlet 레벨, Spring 밖, 인코딩/CORS/보안
+  - Interceptor: Spring MVC 레벨, 로그인 체크, 공통 처리
+  - AOP: 메서드 레벨, 트랜잭션/로깅/권한
+
+  현업 활용:
+    JWT 검증 → Security Filter
+    API 실행 로그 → Interceptor or AOP
+
+  핵심 질문:
+    "JWT 검증을 Interceptor가 아닌 Filter에서 하는 이유는?"
+
+
+20. Spring Boot DevTools + 개발 편의 기능
+----------------------------------------------------------------
+  - spring-boot-devtools: 코드 변경 시 자동 재시작
+  - LiveReload: 브라우저 자동 새로고침
+  - spring-boot-docker-compose: 앱 실행 시 compose.yaml 자동으로 DB 컨테이너 기동
+    (현업 프로젝트에서 이미 사용 중)
+  - @ConfigurationProperties: 타입 안전한 설정 값 바인딩
+  - Actuator: 운영 중 앱 상태 모니터링 엔드포인트 제공
+
+  핵심 질문:
+    "DevTools의 자동 재시작이 일반 재시작보다 빠른 이유는?"
 
 ================================================================

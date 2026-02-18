@@ -1,0 +1,126 @@
+JavaScript 연산자 정리 (TanStack Query 맥락)
+===========================================================
+
+
+1. !! (논리 NOT 두 번)
+-----------------------------------------------------------
+값을 Boolean(true/false)으로 강제 변환한다.
+
+원리:
+  !값   -> 반전된 boolean
+  !!값  -> 한 번 더 반전 -> 원래 truthy/falsy를 boolean으로
+
+예시:
+  !!undefined   -> false
+  !!null        -> false
+  !!''          -> false   (빈 문자열)
+  !!0           -> false
+
+  !!'hello'     -> true
+  !!1           -> true
+  !!{}          -> true    (빈 객체도 true)
+  !![]          -> true    (빈 배열도 true)
+
+TanStack Query에서 쓰는 이유:
+  enabled: !!userId
+
+  userId가 undefined/null/'' 이면  ->  enabled: false  ->  요청 안 함
+  userId가 'user-123' 같은 값이면  ->  enabled: true   ->  요청 함
+
+  그냥 enabled: userId 로 써도 동작은 하지만,
+  enabled는 boolean을 기대하는 옵션이라 !!로 명시적으로 변환하는 게 관례.
+
+
+-----------------------------------------------------------
+2. ?? (Nullish Coalescing, null 병합 연산자)
+-----------------------------------------------------------
+왼쪽이 null 또는 undefined 일 때만 오른쪽 값을 사용한다.
+
+문법: A ?? B
+  A가 null 또는 undefined -> B 반환
+  A가 그 외 어떤 값이든   -> A 반환 (0, '', false 도 A 반환)
+
+예시:
+  null      ?? '기본값'  -> '기본값'
+  undefined ?? '기본값'  -> '기본값'
+
+  0         ?? '기본값'  -> 0         (0도 유효한 값으로 취급)
+  ''        ?? '기본값'  -> ''        (빈 문자열도 유효한 값으로 취급)
+  false     ?? '기본값'  -> false     (false도 유효한 값으로 취급)
+
+TanStack Query에서 쓰는 이유:
+  select: (res) => res.data ?? []
+
+  서버가 data: null 또는 data를 아예 안 보내면  ->  [] 반환
+  서버가 data: [] 를 보내면                     ->  [] 반환 (빈 배열도 유효)
+  서버가 data: [{...}] 를 보내면                ->  [{...}] 반환
+
+
+-----------------------------------------------------------
+3. ?? vs || 차이 (헷갈리는 포인트)
+-----------------------------------------------------------
+|| (OR 연산자) : 왼쪽이 falsy(false, 0, '', null, undefined, NaN)면 오른쪽 사용
+??             : 왼쪽이 null/undefined 일 때만 오른쪽 사용
+
+  0  || 100   -> 100    (0이 falsy라 오른쪽 사용, 의도와 다를 수 있음)
+  0  ?? 100   -> 0      (0은 null/undefined 아니므로 그대로)
+
+  '' || '기본값'  -> '기본값'   (빈 문자열이 falsy)
+  '' ?? '기본값'  -> ''         (빈 문자열은 null/undefined 아님)
+
+실무에서:
+  숫자 0이나 빈 문자열도 유효한 값일 때  ->  ?? 사용
+  falsy 전체를 기본값으로 대체하고 싶을 때  ->  || 사용
+
+
+-----------------------------------------------------------
+4. ?. (Optional Chaining)
+-----------------------------------------------------------
+중간에 null/undefined가 있어도 에러 없이 undefined를 반환한다.
+
+문법: A?.B?.C
+
+예시:
+  const user = null
+  user.name          -> TypeError: Cannot read properties of null
+  user?.name         -> undefined (에러 없음)
+
+  const res = { data: null }
+  res.data.items     -> TypeError
+  res.data?.items    -> undefined (에러 없음)
+  res?.data?.items   -> undefined (에러 없음)
+
+TanStack Query/Axios 에러 처리에서:
+  e.response?.data?.message
+  -> e.response 가 없으면 undefined
+  -> e.response 있지만 e.response.data 가 없으면 undefined
+  -> 있으면 message 값 반환
+
+  ?. 없이 쓰면:
+  e.response && e.response.data && e.response.data.message  (장황함)
+
+
+-----------------------------------------------------------
+세 연산자 한눈에 비교
+-----------------------------------------------------------
+
+연산자  이름                  동작
+------  --------------------  --------------------------------
+!!      Double NOT            값 -> boolean 강제 변환
+??      Nullish Coalescing    null/undefined 일 때 대체값 사용
+?.      Optional Chaining     null/undefined 있어도 안전하게 접근
+
+
+-----------------------------------------------------------
+이 프로젝트에서 세 연산자가 쓰인 위치
+-----------------------------------------------------------
+
+// !! -- enabled 조건부 실행
+enabled: !!userId
+
+// ?? -- 서버 응답 fallback
+select: (res) => res.data ?? []
+const { data: brandList = [] } = useBrandList(params)  // = [] 도 같은 역할
+
+// ?. -- 에러 메시지 안전하게 꺼내기
+const msg = e.response?.data?.message || '오류가 발생했습니다.'
