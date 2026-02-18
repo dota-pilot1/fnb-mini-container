@@ -1,0 +1,119 @@
+1. 아래와 같이 선언하면 리액트 폼의 기본 선언이다.
+======================================================================================================
+  const { register, reset: resetSearch, getValues } = useForm({
+    defaultValues: { brandCode: '', brandName: '', useYn: '', syncStatus: '' },
+  })
+======================================================================================================
+
+2. 이때 각 속성
+
+  register,
+  reset (코드에서는 resetSearch로 별칭),
+  getValues
+
+에 대해 알아 보자
+
+3. 각 속성 설명
+======================================================================================================
+
+[ register ]
+------------------------------------------------------------------------------------------------------
+input/select 요소를 react-hook-form에 등록하는 함수.
+
+  <Input {...register('brandCode')} />
+
+register('brandCode') 가 반환하는 것:
+  {
+    name: 'brandCode',           // input의 name 속성
+    ref: (el) => { ... },        // DOM 요소를 폼에 등록
+    onChange: (e) => { ... },    // 값 변경 감지
+    onBlur: (e) => { ... },      // 포커스 해제 감지
+  }
+
+{...register('brandCode')} 는 이 4개 속성을 input에 한 번에 spread.
+즉 직접 이렇게 쓰는 것과 같다:
+  <Input
+    name="brandCode"
+    ref={...}
+    onChange={...}
+    onBlur={...}
+  />
+
+유효성 검사 옵션도 같이 줄 수 있다:
+  {...register('brandCode', { required: true })}
+  {...register('brandName', { required: true, maxLength: 50 })}
+
+BrandSearchForm에서 register를 props로 받는 이유:
+  useForm은 BrandPage(부모)에 선언되어 있다.
+  자식(BrandSearchForm)은 register만 받아서 input에 연결하면 된다.
+  이렇게 하면 폼 상태는 부모가 관리, 자식은 UI만 담당.
+
+
+[ reset (코드에서 resetSearch로 별칭) ]
+------------------------------------------------------------------------------------------------------
+폼 값을 초기화하거나 특정 값으로 덮어쓰는 함수.
+
+  // reset: resetSearch 의 의미
+  //   구조분해 할당 시 이름 충돌을 피하거나 의미를 명확히 하고 싶을 때 별칭 사용
+  const { reset: resetSearch } = useForm(...)
+  //   reset 함수를 resetSearch 라는 이름으로 가져온 것. 동작은 완전히 동일.
+
+사용법 1: 인자 없이 호출 -> defaultValues로 초기화
+  resetSearch()
+  // { brandCode: '', brandName: '', useYn: '', syncStatus: '' } 로 돌아감
+
+사용법 2: 객체를 인자로 전달 -> 해당 값으로 세팅
+  reset(brand)
+  // brand = { brandCode: 'A001', brandName: '브랜드A', ... }
+  // 폼 전체를 brand 객체 값으로 채움
+  // BrandDetail에서 행 클릭 시 선택된 데이터로 폼을 채울 때 이 방식 사용
+
+이 프로젝트에서 두 가지로 쓰임:
+  BrandPage   -> resetSearch()        : 검색 초기화 버튼 클릭 시 빈 값으로
+  BrandDetail -> reset(brand)         : 목록에서 행 선택 시 상세 데이터로 채움
+              -> reset({ ...초기값 }) : 신규 버튼 클릭 시 빈 폼으로
+
+
+[ getValues ]
+------------------------------------------------------------------------------------------------------
+현재 폼에 입력된 값 전체를 객체로 꺼내는 함수.
+리렌더를 발생시키지 않는다. (스냅샷 개념)
+
+  const params = getValues()
+  // -> { brandCode: 'A001', brandName: '', useYn: 'Y', syncStatus: '' }
+
+특정 필드만 꺼낼 수도 있다:
+  getValues('brandCode')              // -> 'A001'
+  getValues(['brandCode', 'useYn'])   // -> ['A001', 'Y']
+
+이 프로젝트에서 쓰이는 위치:
+  const handleSearch = () => {
+    const params = getValues()        // 현재 폼 값 수집
+    const cleanParams = Object.fromEntries(
+      Object.entries(params).filter(([, v]) => v !== '')  // 빈 문자열 제거
+    )
+    // cleanParams = { brandCode: 'A001', useYn: 'Y' }  <- 빈 값 제외
+    setSearchParams(cleanParams)      // API 요청 파라미터로 사용
+  }
+
+watch와의 차이:
+  watch('brandCode')  -> 값이 바뀔 때마다 리렌더 발생 (화면 반응형)
+  getValues()         -> 리렌더 없음, 버튼 클릭 시점 값 수집에 적합
+
+
+======================================================================================================
+4. 전체 흐름 정리
+======================================================================================================
+
+  const { register, reset: resetSearch, getValues } = useForm({
+    defaultValues: { brandCode: '', brandName: '', useYn: '', syncStatus: '' },
+  })
+
+  register    -> <Input {...register('brandCode')} /> 처럼 input에 연결
+                 자식 컴포넌트(BrandSearchForm)에 props로 전달
+
+  resetSearch -> 초기화 버튼 클릭 시 resetSearch() 호출
+                 defaultValues({ brandCode: '', ... })로 복귀
+
+  getValues   -> 조회 버튼 클릭 시 getValues() 호출
+                 현재 입력값 객체로 수집 -> API 파라미터로 사용
