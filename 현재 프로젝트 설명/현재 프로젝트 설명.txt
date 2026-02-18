@@ -1,0 +1,9 @@
+1. 메인 백엔드 서버:
+/Users/terecal/fnb-mini-container/fnb-mini-back
+
+2. 외부 api 서버:
+/Users/terecal/fnb-mini-container/fnb-external-api
+
+3. 프론트 프로젝트:
+/Users/terecal/fnb-mini-container/fnb-mini-front
+

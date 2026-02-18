@@ -1,0 +1,81 @@
+/* 사이드바 - 실무: assets/style/common.scss의 .left-menu 영역 */
+.left-menu {
+  width: 200px;
+  min-width: 200px;
+  background: #fff;
+  border-right: 1px solid #e5e7eb;
+  height: calc(100vh - 48px - 36px); // 헤더 + 탭바 높이 제외
+  overflow-y: auto;
+
+  .left-menu-list {
+    list-style: none;
+    margin: 0;
+    padding: 8px 0;
+  }
+
+  // depth 4: 카테고리
+  .left-menu-category {
+    .left-menu-category-btn {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      width: 100%;
+      padding: 8px 16px;
+      font-size: 13px;
+      font-weight: 600;
+      color: #374151;
+      background: none;
+      border: none;
+      cursor: pointer;
+      text-align: left;
+
+      &:hover {
+        background: #f3f4f6;
+      }
+
+      .left-menu-arrow {
+        font-size: 12px;
+        color: #9ca3af;
+        transition: transform 0.2s;
+
+        &.open {
+          transform: rotate(0deg);
+        }
+
+        &:not(.open) {
+          transform: rotate(-90deg);
+        }
+      }
+    }
+  }
+
+  // depth 5: 실제 메뉴 아이템
+  .left-menu-items {
+    list-style: none;
+    margin: 0;
+    padding: 0 0 4px 0;
+
+    .left-menu-item {
+      display: block;
+      width: 100%;
+      padding: 6px 16px 6px 28px;
+      font-size: 13px;
+      color: #4b5563;
+      background: none;
+      border: none;
+      cursor: pointer;
+      text-align: left;
+
+      &:hover {
+        background: #f3f4f6;
+        color: #111827;
+      }
+
+      &.active {
+        background: #eff6ff;
+        color: #2563eb;
+        font-weight: 500;
+      }
+    }
+  }
+}

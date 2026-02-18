@@ -1,0 +1,68 @@
+
+1. 헤더 클릭 (depth 3)
+    └→ 사이드바 갱신 (depth 4 카테고리 출력)
+            └→ 사이드바 depth 5 클릭
+                    └→ 탭 등록 + 본문 렌더링
+
+2. DB 테이블 컬럼 구성
+
+  CREATE TABLE menu (
+    id             INT          PK, AUTO_INCREMENT
+    parent_id      INT          NULL 허용 / 상위 메뉴 FK / depth 3은 NULL
+    depth          INT          3, 4, 5
+    menu_name      VARCHAR      메뉴 이름 (헤더/사이드바에 표시)
+    component_name VARCHAR      NULL 허용 / depth 5만 값 있음 (예: 'BrandPage')
+    sort_order     INT          같은 parent 내 순서
+    use_yn         CHAR(1)      'Y' / 'N'
+  )
+
+3. depth별 데이터 예시
+
+  depth 3 (헤더)
+  ┌─────┬───────────┬───────┬────────────────┬────────────────┬────────────┬────────┐
+  │ id  │ parent_id │ depth │ menu_name      │ component_name │ sort_order │ use_yn │
+  ├─────┼───────────┼───────┼────────────────┼────────────────┼────────────┼────────┤
+  │ 1   │ NULL      │ 3     │ 기준 정보 관리  │ NULL           │ 1          │ Y      │
+  │ 2   │ NULL      │ 3     │ 동기화 이력     │ NULL           │ 2          │ Y      │
+  │ 3   │ NULL      │ 3     │ 정산 관리       │ NULL           │ 3          │ Y      │
+  └─────┴───────────┴───────┴────────────────┴────────────────┴────────────┴────────┘
+
+  depth 4 (사이드바 카테고리)
+  ┌─────┬───────────┬───────┬────────────────┬────────────────┬────────────┬────────┐
+  │ id  │ parent_id │ depth │ menu_name      │ component_name │ sort_order │ use_yn │
+  ├─────┼───────────┼───────┼────────────────┼────────────────┼────────────┼────────┤
+  │ 10  │ 1         │ 4     │ 브랜드          │ NULL           │ 1          │ Y      │
+  │ 20  │ 2         │ 4     │ 동기화          │ NULL           │ 1          │ Y      │
+  │ 30  │ 3         │ 4     │ 매출            │ NULL           │ 1          │ Y      │
+  └─────┴───────────┴───────┴────────────────┴────────────────┴────────────┴────────┘
+
+  depth 5 (탭에 등록되는 실제 메뉴)
+  ┌─────┬───────────┬───────┬────────────────┬────────────────┬────────────┬────────┐
+  │ id  │ parent_id │ depth │ menu_name      │ component_name │ sort_order │ use_yn │
+  ├─────┼───────────┼───────┼────────────────┼────────────────┼────────────┼────────┤
+  │ 100 │ 10        │ 5     │ 브랜드 관리     │ BrandPage      │ 1          │ Y      │
+  │ 200 │ 20        │ 5     │ 동기화 이력     │ SyncHistoryPage│ 1          │ Y      │
+  │ 300 │ 30        │ 5     │ 매출 정산       │ SettlementPage │ 1          │ Y      │
+  └─────┴───────────┴───────┴────────────────┴────────────────┴────────────┴────────┘
+
+4. parent_id 연결 구조
+
+  id=1 (기준 정보 관리, depth 3)
+    └→ id=10 (브랜드, depth 4,  parent_id=1)
+          └→ id=100 (브랜드 관리, depth 5, parent_id=10, component_name='BrandPage')
+
+  id=2 (동기화 이력, depth 3)
+    └→ id=20 (동기화, depth 4, parent_id=2)
+          └→ id=200 (동기화 이력, depth 5, parent_id=20, component_name='SyncHistoryPage')
+
+  id=3 (정산 관리, depth 3)
+    └→ id=30 (매출, depth 4, parent_id=3)
+          └→ id=300 (매출 정산, depth 5, parent_id=30, component_name='SettlementPage')
+
+5. 핵심 규칙
+
+  - component_name은 depth 5에만 존재 (depth 3, 4는 NULL)
+  - depth 3 클릭 → 사이드바만 갱신, 탭 열리지 않음
+  - depth 4 클릭 → 아코디언 펼치기/접기만, 탭 열리지 않음
+  - depth 5 클릭 → component_name으로 컴포넌트 찾아서 탭 등록 + 본문 렌더링
+  - parent_id 하나로 전체 계층 표현 (depth 3은 parent_id=NULL)

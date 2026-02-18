@@ -1,25 +1,22 @@
-import { NavLink, useNavigate } from 'react-router'
+import { useNavigate } from 'react-router'
 import { useAuth } from '@/context/AuthContext'
+import { useMenu } from '@/context/MenuContext'
 import '@/assets/style/header.scss'
 
 /**
- * 헤더 네비게이션
+ * 헤더 GNB
  *
  * 실무: components/common/layout/Header.jsx
- * - .header > .header-first-line > .header-menu (로고 + GNB) + .nav-right-menu (사용자정보)
- * - useFwTab 훅으로 메뉴 활성화
+ * - fwMenuState에서 depth 3 메뉴 읽어서 렌더링
+ * - 클릭 → handleActive(id) → fwLeftMenuState 업데이트
  *
- * Mini: NavLink로 간소화, 동일한 시각 구조
+ * Mini: MenuContext에서 headerMenus 읽어서 렌더링
+ * - 하드코딩 menus 배열 → DB 데이터로 교체
+ * - NavLink → button (탭 SPA 방식, URL 이동 없음)
  */
-
-const menus = [
-  { path: '/brand', name: '브랜드 관리' },
-  { path: '/sync-history', name: '동기화 이력' },
-  { path: '/settlement', name: '매출 정산' },
-]
-
 export default function Header() {
   const { user, logout } = useAuth()
+  const { headerMenus, activeHeaderId, handleHeaderClick } = useMenu()
   const navigate = useNavigate()
 
   const handleLogout = () => {
@@ -31,24 +28,16 @@ export default function Header() {
     <div className="header">
       <div className="header-first-line">
         <div className="header-menu">
-          <h1
-            className="logo"
-            onClick={() => navigate('/brand')}
-            style={{ cursor: 'pointer' }}
-          >
-            FNB Mini
-          </h1>
+          <h1 className="logo">FNB Mini</h1>
           <ul className="header-1depth">
-            {menus.map((menu) => (
-              <li key={menu.path}>
-                <NavLink
-                  to={menu.path}
-                  className={({ isActive }) =>
-                    `btn-text ${isActive ? 'active' : ''}`
-                  }
+            {headerMenus.map((menu) => (
+              <li key={menu.id}>
+                <button
+                  className={`btn-text ${activeHeaderId === menu.id ? 'active' : ''}`}
+                  onClick={() => handleHeaderClick(menu)}
                 >
-                  {menu.name}
-                </NavLink>
+                  {menu.menuName}
+                </button>
               </li>
             ))}
           </ul>

@@ -1,0 +1,132 @@
+1. 현재 메뉴 구성을 디비 연동 방식으로 바꾸려면?
+
+[실무 구조 요약]
+- 로그인 시 POST /api/userInfo/v1.0 호출
+- 서버에서 3단계 메뉴를 계층 구조로 조합해서 반환 (depth 3/4/5)
+- 프론트에서 localStorage("sessionMenuList")에 저장
+- App.jsx가 부팅 시 localStorage를 읽어 Recoil(fwMenuState)에 세팅
+- Header는 depth 3 (GNB), LeftMenu는 depth 4/5 (서브메뉴) 렌더링
+
+[연습 프로젝트에서 구현할 단계]
+
+  [백엔드]
+  1) DB 테이블 설계
+     - menu 테이블: id, menu_name, depth, parent_id, component_name, url, use_yn, sort_order
+     - user_menu_auth 테이블: user_id, menu_id (권한 필요하면)
+     - 처음엔 권한 없이 단순 메뉴 테이블만으로 시작해도 충분
+
+  2) API 작성
+     - GET /api/menus → 전체 메뉴 계층 구조 반환
+     - 서비스에서 flat 리스트를 재귀 또는 반복으로 트리 조합
+     - 실무는 Java(MyBatis) / 연습은 Node+Express 또는 Spring Boot 선택
+
+  3) 응답 형태 예시
+     [
+       {
+         "id": 1, "menuName": "운영", "depth": 3,
+         "subMenus": [
+           {
+             "id": 10, "menuName": "메뉴관리", "depth": 4,
+             "subMenus": [
+               { "id": 100, "menuName": "프로그램관리", "depth": 5, "url": "/pgmMng" }
+             ]
+           }
+         ]
+       }
+     ]
+
+  [프론트엔드]
+  1) 로그인 or 앱 초기화 시 API 호출
+     - axios.get('/api/menus') → 응답을 Recoil 또는 Context에 저장
+
+  2) Recoil atom 구성 (실무와 동일 구조)
+     - menuState: depth 3 목록 (Header용)
+     - leftMenuState: 현재 선택된 depth 3의 subMenus (LeftMenu용)
+
+  3) Header 컴포넌트
+     - menuState 읽어서 depth 3 버튼 렌더링
+     - 클릭 시 leftMenuState 업데이트
+
+  4) LeftMenu 컴포넌트
+     - leftMenuState 읽어서 depth 4 카테고리, depth 5 아이템 렌더링
+     - 아코디언 방식 expand/collapse
+
+[핵심 차이점: 하드코딩 → DB 연동]
+  - 기존: 메뉴를 코드에 직접 박거나 JSON 파일로 관리
+  - DB 연동: 관리자 페이지에서 메뉴 추가/수정/삭제 → 즉시 반영
+  - 이점: 배포 없이 메뉴 구조 변경 가능
+
+---
+
+2. 관리자 페이지에 tabulator 보다 react-table 이나 ag-grid 사용 하면 어때?
+
+[각 라이브러리 특성]
+
+  Tabulator (실무 현재)
+  - 장점: 설정이 간단, 바닐라 JS 기반이라 React 외 환경에서도 동작
+  - 단점: React와 통합이 어색함 (ref 직접 조작), 리렌더링 제어 복잡, 생태계가 상대적으로 작음
+
+  TanStack Table (react-table v8)
+  - 장점: React 친화적 (훅 기반), headless라 UI 자유도 높음, 번들 크기 작음
+  - 단점: UI를 직접 만들어야 해서 초기 셋업 비용이 있음
+  - 적합: 커스텀 디자인이 필요한 관리자 페이지, 이미 React 스택인 경우
+
+  AG Grid (Community)
+  - 장점: 기능이 가장 풍부 (정렬/필터/그룹핑/인라인 편집 내장), 대용량 데이터에 강함
+  - 단점: 번들 크기가 큼, Enterprise 기능은 유료
+  - 적합: 메뉴 수가 많고 인라인 편집, 행 드래그 정렬이 필요한 경우
+
+[연습 프로젝트 추천]
+  → TanStack Table 추천
+  - 이유 1: React 코드 흐름 안에서 상태 관리가 자연스러움
+  - 이유 2: 가볍고 학습 비용 대비 실무 적용성 높음
+  - 이유 3: 인라인 편집, 필터, 페이지네이션 모두 훅으로 붙일 수 있음
+  - AG Grid는 실무에서 엑셀 수준의 그리드가 필요할 때 검토
+
+---
+
+3. 실무 메뉴 관리자 페이지 개선 방향
+
+[현재 문제점]
+  - 관련 없는 행들(다른 시스템/미사용 메뉴)이 같이 출력됨
+  - 신규 메뉴 등록 시 입력 필드를 모두 수동 입력해야 함
+  - 계층 구조(depth 3/4/5)가 평면 테이블로 보여 관계 파악이 어려움
+
+[개선 방향]
+
+  A. 필터링 개선
+  - 상단에 depth / use_yn / 상위메뉴 필터 드롭다운 추가
+  - 트리 형태로 렌더링: 상위 메뉴 클릭 시 하위 메뉴만 펼쳐보기
+  - 연습 프로젝트: TanStack Table의 getSubRows() 활용하면 계층 테이블 구현 가능
+
+  B. 입력 자동화
+  - 상위 메뉴 선택 시 depth, progNo 자동 계산
+    예: 상위가 depth 3 (061200000000) 선택 → depth 4, progNo 자동 채번
+  - URL 입력 시 componentName 자동 추출 (경로 마지막 segment)
+  - 기본값 자동 세팅: use_yn = 'Y', lang_cl = 'ko' 등
+
+  C. 인라인 편집
+  - 테이블 셀 클릭 시 바로 편집 가능 (모달 없이)
+  - TanStack Table: cell 렌더러에 <input> 조건부 렌더링으로 구현
+  - AG Grid: defaultColDef.editable = true 로 즉시 적용
+
+  D. 드래그 정렬
+  - 같은 depth 내 sort_order 드래그로 변경
+  - @dnd-kit/sortable 또는 AG Grid row dragging 활용
+
+[연습 프로젝트 구현 우선순위]
+  1순위: TanStack Table + 계층 트리 렌더링
+  2순위: 상위 메뉴 선택 시 depth/progNo 자동 채번
+  3순위: 인라인 편집 (메뉴명, URL, use_yn)
+  4순위: 드래그 정렬
+
+---
+
+[전체 요약: 연습 프로젝트 구현 로드맵]
+
+  Step 1. DB 테이블 설계 + 더미 데이터 삽입
+  Step 2. 백엔드 GET /api/menus 구현 (트리 구조 반환)
+  Step 3. 프론트 - Recoil에 메뉴 세팅 → Header/LeftMenu 렌더링
+  Step 4. 관리자 페이지 - TanStack Table로 메뉴 목록 출력
+  Step 5. 입력 자동화 (depth/progNo 자동 채번)
+  Step 6. 인라인 편집 + 저장 API 연동

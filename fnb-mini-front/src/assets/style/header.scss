@@ -99,8 +99,24 @@
   }
 }
 
-/* 콘텐츠 래퍼 */
-.contents-wrapper {
-  min-height: calc(100vh - 48px);
+/* 탭 SPA 메인 레이아웃 */
+.main-body {
+  display: flex;
+  height: calc(100vh - 48px - 36px); // 헤더(48) + 탭바(36) 제외
+  overflow: hidden;
+}
+
+.contents-area {
+  flex: 1;
+  overflow-y: auto;
   background: #f5f5f5;
+}
+
+.dashboard {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: #9ca3af;
+  font-size: 14px;
 }

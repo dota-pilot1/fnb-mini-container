@@ -1,0 +1,138 @@
+통계 페이지 추가 계획
+===========================================================
+
+목표:
+  현재 정산 페이지는 "운영자가 직접 정산 실행/재시도"하는 트랜잭션 화면.
+  통계 페이지는 "매니저/경영진이 현황을 보는" 리포팅 화면으로 역할이 다름.
+  기존 코드 변경 없이 새 페이지로 추가 가능.
+
+
+===========================================================
+학습 포인트
+===========================================================
+
+1. 백엔드 집계 쿼리 작성 (MyBatis)
+   - GROUP BY, SUM, COUNT, CASE WHEN 활용
+   - 여러 테이블 JOIN 후 집계
+   - 기존 CRUD 쿼리와 달리 읽기 전용 통계 쿼리 설계 방법
+
+2. 통계 전용 API 설계
+   - 기존 /api/settlements 와 분리해서 /api/settlements/stats/* 로 구성
+   - 쿼리 파라미터: 기간(fromDate, toDate), 매장(shopId) 필터
+   - 응답 DTO 설계 (통계 전용 DTO vs 엔티티 재사용)
+
+3. 차트 라이브러리 도입 (Recharts)
+   - npm install recharts
+   - BarChart, LineChart, PieChart 기본 사용법
+   - TanStack Query + Recharts 연동 패턴
+   - 데이터 포맷 변환 (서버 응답 -> 차트 입력 형식)
+
+4. 대시보드 레이아웃 구성
+   - KPI 카드 컴포넌트 (숫자 + 상태 표시)
+   - 그리드 레이아웃으로 여러 차트 배치
+   - 로딩/에러 상태 처리 (스켈레톤 UI)
+
+5. 페이지 진입 시 자동 조회 패턴
+   - 기존 페이지는 검색 버튼 클릭 시 조회 (enabled: false)
+   - 통계 페이지는 진입 즉시 조회 (enabled: true, 기본값)
+   - TanStack Query의 자동 조회 + staleTime 설정으로 불필요한 재요청 방지
+
+
+===========================================================
+구현 범위 (단계별)
+===========================================================
+
+[ 1단계 - 백엔드 집계 API ]
+--------------------------------------
+목표: 통계 데이터를 내려주는 API 3개 추가
+
+  (1) 일일 정산 요약
+      GET /api/settlements/stats/daily-summary?date=2026-02-18
+      응답: { totalCount, settledCount, failedCount, readyCount, totalAmount, successRate }
+
+  (2) 매장별 정산 현황
+      GET /api/settlements/stats/shop-summary?fromDate=...&toDate=...
+      응답: [ { shopName, totalCount, settledCount, failedCount, totalAmount } ]
+
+  (3) 결제수단별 매출 분석
+      GET /api/settlements/stats/payment-method?fromDate=...&toDate=...
+      응답: [ { shopName, cashAmt, cardAmt, easyAmt, totalAmt } ]
+
+  필요한 작업:
+    - SettlementMapper.xml 에 집계 쿼리 3개 추가
+    - SettlementService 에 메서드 3개 추가
+    - SettlementStatsController 신규 생성
+    - 통계용 DTO 3개 신규 생성
+
+[ 2단계 - 프론트 통계 페이지 ]
+--------------------------------------
+목표: /stats 경로로 접근 가능한 통계 페이지 1개 추가
+
+  컴포넌트 구성:
+    pages/stats/StatsPage.jsx          (페이지 컨테이너)
+    components/stats/DailySummaryCards.jsx   (KPI 카드 3개: 총건수/성공/실패)
+    components/stats/ShopSummaryChart.jsx    (매장별 막대 차트)
+    components/stats/PaymentMethodChart.jsx  (결제수단별 파이 차트)
+
+  필요한 작업:
+    - npm install recharts
+    - hooks/stats/use-stats-queries.js 생성 (TanStack Query)
+    - api/stats/stats-fetch.js 생성
+    - App.jsx 에 /stats 라우트 추가
+    - Header.jsx 에 "매출 통계" 메뉴 추가
+
+[ 3단계 - 테스트 데이터 ]
+--------------------------------------
+목표: 통계가 의미 있으려면 데이터가 필요
+
+  방법 1: SQL INSERT 스크립트로 샘플 데이터 직접 삽입
+  방법 2: Airstar Mock API 에서 더 많은 매장/날짜 데이터 생성
+  방법 3: 백엔드에 데이터 시딩 엔드포인트 임시 추가
+
+
+===========================================================
+현재 DB에서 뽑을 수 있는 통계 항목
+===========================================================
+
+settlement 테이블:
+  - status 별 건수/금액 (SETTLED/FAILED/READY/PROCESSING)
+  - 매장별 정산 성공률
+  - settled_at 기준 시간대별 처리 추이
+  - 정산 처리 소요 시간 (settled_at - created_at)
+
+daily_sales 테이블:
+  - cash_amt / card_amt / easy_amt 결제수단별 분석
+  - 매장별 일매출 추이
+  - 일자별 총매출 합계
+
+settlement_ledger 테이블:
+  - ledger_type=REVERSE 건 -> 재정산 발생률, 영향 금액
+
+settlement_sync_history 테이블:
+  - SAP 연동 실패 원인 그룹핑
+  - 재시도 패턴 분석
+
+
+===========================================================
+기술 스택
+===========================================================
+
+백엔드:
+  - 기존 Spring Boot + MyBatis 그대로 사용
+  - 집계 쿼리만 추가
+
+프론트:
+  - recharts (차트 라이브러리, React 친화적)
+  - TanStack Query (기존에 도입됨, enabled: true 패턴으로 자동 조회)
+  - 기존 shadcn UI 컴포넌트 재사용
+
+
+===========================================================
+예상 학습 효과
+===========================================================
+
+  - CRUD 외의 집계/통계 쿼리 패턴 경험
+  - 차트 라이브러리 도입 및 데이터 연동 방법 습득
+  - TanStack Query의 자동 조회(enabled: true) 패턴 vs 수동 조회 패턴 비교
+  - 대시보드 레이아웃 설계 경험
+  - 운영 화면(트랜잭션) vs 리포팅 화면(조회) 의 역할 분리 이해

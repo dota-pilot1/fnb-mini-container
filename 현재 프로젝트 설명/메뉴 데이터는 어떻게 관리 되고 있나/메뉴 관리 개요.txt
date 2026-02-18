@@ -1,0 +1,32 @@
+메뉴 데이터 관리 개요
+==============================================
+
+메뉴 데이터는 DB에 저장되어 있고, 서버 API를 통해 프론트로 전달된다.
+하드코딩 없이 DB만 수정하면 화면 메뉴가 바뀌는 구조.
+
+구성 요소 3가지:
+  1. DB 테이블 (menu)          → 메뉴 계층 구조 저장
+  2. 백엔드 API                → DB 데이터를 트리 구조로 가공해서 응답
+  3. 프론트 MenuContext        → API 호출 후 전역 상태로 관리, 헤더/사이드바에 제공
+
+메뉴 계층 (depth):
+  depth 3  →  헤더 GNB 메뉴       (기준 정보 관리 / 동기화 이력 / 정산 관리)
+  depth 4  →  사이드바 카테고리    (브랜드 / 동기화 / 매출)
+  depth 5  →  실제 메뉴 (탭 등록)  (브랜드 관리 / 동기화 이력 / 매출 정산)
+
+관련 파일:
+  백엔드:
+    schema.sql                  메뉴 테이블 정의 + 더미 데이터
+    MenuController.java         GET /api/menu/tree, GET /api/menu/list
+    MenuService.java            flat 리스트 → 트리 구조 조립
+    menuMapper.xml              SELECT 쿼리
+    MenuDto.java                응답 DTO
+
+  프론트:
+    src/api/menu/menu-fetch.js  API 호출 함수
+    src/context/MenuContext.jsx 메뉴 전역 상태 관리
+    src/componentRegistry.js    componentName 키 → lazy import 매핑
+    components/layout/Header.jsx         헤더 메뉴 렌더링 (depth 3)
+    components/layout/LeftMenu.jsx       사이드바 렌더링 (depth 4, 5)
+    components/layout/MdiTab.jsx         탭 바
+    components/layout/Layout.jsx         탭 SPA 본문 렌더링

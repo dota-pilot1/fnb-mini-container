@@ -1,0 +1,98 @@
+menu 테이블 구조
+==============================================
+
+1. 테이블 정의
+   파일: fnb-mini-back/src/main/resources/schema.sql
+
+   CREATE TABLE IF NOT EXISTS menu (
+       id              BIGSERIAL PRIMARY KEY,
+       parent_id       BIGINT       REFERENCES menu(id),
+       depth           INT          NOT NULL,
+       menu_name       VARCHAR(100) NOT NULL,
+       component_name  VARCHAR(100),
+       sort_order      INT          NOT NULL DEFAULT 0,
+       use_yn          CHAR(1)      NOT NULL DEFAULT 'Y'
+   );
+
+2. 컬럼 설명
+
+   id             자동 증가 PK
+   parent_id      부모 메뉴 id (NULL이면 최상위 = depth 3)
+                  같은 테이블의 id를 참조하는 자기 참조 외래키
+   depth          메뉴 계층
+                    3 = 헤더 GNB 메뉴 (parent_id = NULL)
+                    4 = 사이드바 카테고리 (parent_id = depth 3의 id)
+                    5 = 실제 메뉴, 탭 등록 대상 (parent_id = depth 4의 id)
+   menu_name      화면에 표시되는 메뉴 이름
+   component_name depth 5만 값 있음. 탭 클릭 시 렌더링할 컴포넌트 키 이름
+                  예: 'BrandPage', 'SettlementPage'
+                  depth 3, 4는 NULL (직접 렌더링 안 함)
+   sort_order     같은 depth, 같은 부모 안에서 정렬 순서
+   use_yn         사용 여부 (Y/N). API 조회 시 Y인 것만 반환
+
+3. 실제 데이터 구조 (더미 데이터)
+
+   depth 3 (헤더)
+     id=1   parent_id=NULL   기준 정보 관리
+     id=2   parent_id=NULL   동기화 이력
+     id=3   parent_id=NULL   정산 관리
+
+   depth 4 (사이드바 카테고리)
+     id=10  parent_id=1      브랜드        (기준 정보 관리 하위)
+     id=20  parent_id=2      동기화        (동기화 이력 하위)
+     id=30  parent_id=3      매출          (정산 관리 하위)
+
+   depth 5 (실제 메뉴)
+     id=100  parent_id=10   브랜드 관리    component_name='BrandPage'
+     id=200  parent_id=20   동기화 이력    component_name='SyncHistoryPage'
+     id=300  parent_id=30   매출 정산      component_name='SettlementPage'
+
+4. 트리 관계 시각화
+
+   기준 정보 관리 (id=1, depth=3)
+     └── 브랜드 (id=10, depth=4)
+           └── 브랜드 관리 (id=100, depth=5, componentName='BrandPage')
+
+   동기화 이력 (id=2, depth=3)
+     └── 동기화 (id=20, depth=4)
+           └── 동기화 이력 (id=200, depth=5, componentName='SyncHistoryPage')
+
+   정산 관리 (id=3, depth=3)
+     └── 매출 (id=30, depth=4)
+           └── 매출 정산 (id=300, depth=5, componentName='SettlementPage')
+
+5. 핵심 설계 포인트
+
+   하나의 테이블로 계층 표현 (self join)
+     - parent_id = NULL → 최상위 (depth 3)
+     - parent_id 있음   → 해당 부모의 자식
+
+   component_name 저장 방식
+     - DB에 컴포넌트 '이름(키)'만 저장
+     - 프론트 componentRegistry.js에서 키 → lazy import 매핑
+     - 실제 파일 경로는 프론트 코드에서 관리
+     - 이유: 번들러가 정적 분석 가능 + 오타 시 컴파일 오류로 조기 발견
+
+   use_yn = 'Y' 필터
+     - 메뉴 비활성화 시 DB 삭제 없이 use_yn = 'N' 으로 처리
+     - API에서 WHERE use_yn = 'Y' 조건으로 자동 필터링
+
+==================================================================================================
+
+보충 설명:
+==================================================================================================
+인접 목록 모델 (Adjacency List) 이라고 했어. 특징:
+parent_id 하나로 계층 전체 표현
+자기 자신 테이블을 참조하는 자기 참조 외래키 (self-referential FK)
+구조 단순, 구현 쉬움
+주요 컬럼 2개로 트리가 표현됨:
+id        본인이 누구인지
+parent_id 부모가 누구인지 (NULL이면 최상위)
+이것만 있으면 트리 전체 복원 가능.
+참고로 계층 구조 표현 방식이 이것 말고도 있어:
+방식	특징
+인접 목록 (현재)	parent_id 하나. 단순하지만 전체 트리 조회에 재귀 필요
+경로 열거	/1/10/100 같이 경로를 통째로 저장. 조회 쉽지만 이동 시 업데이트 많음
+중첩 집합	left/right 숫자로 범위 표현. 조회 빠르지만 삽입/수정 복잡
+클로저 테이블	모든 조상-자손 쌍을 별도 테이블에 저장. 조회 최강이지만 데이터 많음
+메뉴처럼 깊이 고정 + 데이터 적음 인 경우엔 인접 목록이 제일 적합한 선택이야.

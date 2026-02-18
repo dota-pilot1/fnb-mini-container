@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.cj.fnbmini.menu.MenuMapper">
+
+    <select id="selectMenuList" resultType="com.cj.fnbmini.menu.dto.MenuDto">
+        SELECT
+            id,
+            parent_id,
+            depth,
+            menu_name,
+            component_name,
+            sort_order,
+            use_yn
+        FROM menu
+        WHERE use_yn = 'Y'
+        ORDER BY depth, sort_order, id
+    </select>
+
+    <select id="selectMenuById" parameterType="long" resultType="com.cj.fnbmini.menu.dto.MenuDto">
+        SELECT
+            id,
+            parent_id,
+            depth,
+            menu_name,
+            component_name,
+            sort_order,
+            use_yn
+        FROM menu
+        WHERE id = #{id}
+    </select>
+
+    <insert id="insertMenu" parameterType="com.cj.fnbmini.menu.dto.MenuDto"
+            useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO menu (parent_id, depth, menu_name, component_name, sort_order, use_yn)
+        VALUES (#{parentId}, #{depth}, #{menuName}, #{componentName}, #{sortOrder}, #{useYn})
+    </insert>
+
+    <update id="updateMenu" parameterType="com.cj.fnbmini.menu.dto.MenuDto">
+        UPDATE menu
+        SET
+            parent_id      = #{parentId},
+            depth          = #{depth},
+            menu_name      = #{menuName},
+            component_name = #{componentName},
+            sort_order     = #{sortOrder},
+            use_yn         = #{useYn}
+        WHERE id = #{id}
+    </update>
+
+    <delete id="deleteMenu" parameterType="long">
+        DELETE FROM menu WHERE id = #{id}
+    </delete>
+
+</mapper>

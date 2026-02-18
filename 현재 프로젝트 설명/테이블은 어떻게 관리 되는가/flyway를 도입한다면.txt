@@ -1,0 +1,86 @@
+Flyway 도입 가이드
+==============================================
+
+1. Flyway란
+   DB 스키마 변경 이력을 파일로 관리하는 마이그레이션 도구
+   - V1__, V2__ 순서대로 파일을 만들면 한 번씩만 실행됨
+   - 어떤 파일이 실행됐는지 flyway_schema_history 테이블에 기록
+   - 팀원 모두 서버 올리면 자동으로 같은 스키마 상태가 됨
+
+2. schema.sql 방식의 한계
+   - CREATE TABLE IF NOT EXISTS: 테이블 존재 여부만 체크
+   - 컬럼 추가/수정, 테이블 이름 변경은 자동 처리 안 됨
+   - 특히 테이블 이름 변경은 치명적:
+       기존 테이블은 그대로 남고 새 이름으로 만들어지지 않음
+       → 수동으로 팀원들에게 공지하고 직접 ALTER 실행해야 함
+
+3. Flyway로 관리하면 달라지는 점
+
+   테이블 이름 변경 예시:
+     V5__rename_settlement_ledger.sql
+     ----------------------------------------
+     ALTER TABLE settlement_ledger RENAME TO settlement_journal;
+     ----------------------------------------
+   → 팀원이 서버 올리면 자동으로 반영됨
+   → 언제 왜 바꿨는지 파일 이름과 내용으로 이력 남음
+
+   컬럼 추가 예시:
+     V6__add_memo_to_daily_sales.sql
+     ----------------------------------------
+     ALTER TABLE daily_sales ADD COLUMN memo VARCHAR(500);
+     ----------------------------------------
+
+4. JPA 없는 MyBatis 환경과의 궁합
+   - JPA ddl-auto: update 같은 게 없으니 DDL 관리 주체가 없음
+   - Flyway가 그 역할을 깔끔하게 채워줌
+   - 오히려 JPA 있는 환경보다 충돌 없이 더 잘 맞음
+
+5. 기존 개발 중인 프로젝트에 도입하는 방법 (초창기 아닐 때)
+
+   5-1. 의존성 추가 (build.gradle)
+        implementation 'org.flywaydb:flyway-core'
+        implementation 'org.flywaydb:flyway-database-postgresql'
+
+   5-2. application.yml 설정
+        spring:
+          flyway:
+            enabled: true
+            baseline-on-migrate: true   ← 핵심! 기존 DB 건드리지 않음
+            baseline-version: 1
+            locations: classpath:db/migration
+
+   5-3. 파일 구조
+        resources/
+          db/
+            migration/
+              V1__baseline.sql   ← 현재 schema.sql 내용 복사
+          schema.sql             ← 이후 mode: never 로 변경 또는 삭제
+
+   5-4. baseline-on-migrate: true 의 의미
+        "이미 DB에 테이블이 있으면 V1은 실행하지 말고
+         기준점(baseline)으로만 기록해라"
+        → 기존 데이터 보존, 기존 테이블 건드리지 않음
+        → V2__ 부터 새로운 변경사항 추적 시작
+
+6. 파일 네이밍 규칙
+   V{버전}__{설명}.sql
+   예시:
+     V1__baseline.sql               초기 스키마 (현재 상태)
+     V2__add_menu_table.sql         메뉴 테이블 추가
+     V3__add_index_to_daily_sales.sql
+     V4__rename_brand_code.sql
+
+   주의:
+     - V와 숫자 사이 언더스코어 1개: V1
+     - 설명과 사이 언더스코어 2개: V1__
+     - 한번 실행된 파일은 내용 수정 불가 (체크섬 검증으로 오류 남)
+
+7. 도입 비용 요약 (A4 한 장 수준)
+   - 의존성 추가: 2줄
+   - yml 설정: 4줄
+   - V1__baseline.sql: schema.sql 내용 복사 붙여넣기
+   - 팀 공유: 네이밍 규칙 V숫자__설명.sql 하나
+
+   설득 포인트:
+   "지금은 테이블 바꾸면 팀원한테 직접 공지하고 수동으로 ALTER 해야 하는데
+    Flyway 쓰면 파일 하나 추가하면 서버 올릴 때 자동으로 다 반영됨"

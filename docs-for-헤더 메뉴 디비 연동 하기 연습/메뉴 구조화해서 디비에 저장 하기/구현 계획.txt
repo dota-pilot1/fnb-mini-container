@@ -1,0 +1,82 @@
+구현 계획 - 헤더 메뉴 DB 연동 + 탭 시스템 리팩토링
+=======================================================
+
+기술 스택
+  백엔드: Spring Boot 3.5 / Java 21 / MyBatis / PostgreSQL
+  프론트: React 19 / React Context / TanStack Query / Vite
+
+---
+
+A. 백엔드
+
+  1. schema.sql - menu 테이블 추가 + 더미 데이터 insert
+  2. MenuDto.java - 응답 DTO (id, menuName, depth, componentName, subMenus)
+  3. menuMapper.xml - SELECT 쿼리 (use_yn='Y', sort_order 정렬)
+  4. MenuMapper.java - 인터페이스
+  5. MenuService.java - flat 리스트 → 트리 구조 조립
+  6. MenuController.java - GET /api/menu/tree, /api/menu/list
+
+  응답 형태 (트리):
+  [
+    { id: 1, menuName: "기준 정보 관리", depth: 3, subMenus: [
+        { id: 10, menuName: "브랜드", depth: 4, subMenus: [
+            { id: 100, menuName: "브랜드 관리", depth: 5, componentName: "BrandPage" }
+        ]}
+    ]}
+  ]
+
+---
+
+C. 프론트 - 메뉴 관리 페이지
+
+  1. GET /api/menu/list 호출해서 메뉴 목록 테이블 출력
+  2. 신규 추가 / 수정 / 삭제 (POST /api/menu/save)
+  3. App.jsx 라우터에 /menu-mng 추가 (임시, B단계에서 탭으로 전환)
+
+---
+
+B. 프론트 - 탭 시스템 + 레이아웃 리팩토링
+
+  1. MenuContext.jsx - 메뉴 상태 (headerMenus, leftMenus, activeHeaderId)
+     - 앱 초기화 시 GET /api/menu/tree 호출
+     - 헤더 클릭 시 leftMenus 갱신
+     - 탭 전환 시 사이드바 동기화 (syncLeftMenuByHeaderId)
+
+  2. TabContext.jsx - 탭 상태 (tabs, activeTabId)
+     - 탭에 headerMenuId 저장 (어느 헤더 소속인지)
+     - 탭 전환 시 사이드바 동기화 콜백 호출
+
+  3. LeftMenu.jsx - 사이드바 컴포넌트
+     - depth 4: 아코디언 (접기/펼치기)
+     - depth 5: 클릭 시 addTab(item, activeHeaderId)
+
+  4. MdiTab.jsx - 탭 바 컴포넌트
+     - 탭 클릭 → changeTab → 사이드바 자동 동기화
+
+  5. componentRegistry.js - componentName 키 → lazy import 매핑
+
+  6. Layout.jsx
+     - Outlet 제거 (탭 SPA 방식)
+     - activeTab.componentName → 레지스트리에서 컴포넌트 렌더링
+     - registerTabChangeCallback으로 사이드바 동기화 연결
+
+  7. Header.jsx
+     - 하드코딩 menus 배열 → API 데이터 (headerMenus)
+     - NavLink → button (URL 이동 없음)
+
+  8. App.jsx
+     - /brand, /sync-history 등 개별 라우트 제거
+     - /main 단일 라우트로 교체 (탭 SPA)
+
+  URL: /main 고정 (탭 SPA 방식, URL 변경 없음)
+
+---
+
+작업 순서: A → C → B (완료)
+
+탭 클릭 시 사이드바 동기화 흐름:
+  사이드바 depth 5 클릭
+    → addTab(item, activeHeaderId)   탭에 headerMenuId 저장
+    → 탭 클릭 (changeTab)
+    → syncLeftMenuByHeaderId(headerMenuId)
+    → 해당 헤더의 subMenus로 사이드바 갱신

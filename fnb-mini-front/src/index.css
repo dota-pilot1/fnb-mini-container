@@ -122,3 +122,9 @@
     @apply bg-background text-foreground;
     }
 }
+
+@layer components {
+  .input-field {
+    @apply w-full px-2 py-1.5 text-sm border rounded focus:outline-none focus:ring-1 focus:ring-slate-400;
+  }
+}

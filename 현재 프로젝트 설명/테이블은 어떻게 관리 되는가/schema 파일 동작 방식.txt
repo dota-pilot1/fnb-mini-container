@@ -1,0 +1,57 @@
+schema.sql 동작 방식
+==============================================
+
+1. 파일 위치
+   fnb-mini-back/src/main/resources/schema.sql
+
+2. 실행 시점
+   Spring Boot 서버 시작할 때마다 자동 실행됨
+
+   application.yml 설정:
+     spring:
+       sql:
+         init:
+           mode: always   ← 매번 실행
+
+3. 핵심 원칙: 없으면 실행, 있으면 스킵
+
+   테이블:
+     CREATE TABLE IF NOT EXISTS menu ( ... )
+     → 테이블이 없으면 생성
+     → 이미 있으면 무시 (기존 데이터 유지)
+
+   데이터:
+     INSERT INTO menu (...) VALUES (...)
+     ON CONFLICT (id) DO NOTHING
+     → id가 없으면 insert
+     → 이미 있으면 무시 (덮어쓰지 않음)
+
+4. 실행 흐름
+   서버 시작
+     → schema.sql 전체 실행
+       → 테이블 없으면 생성 / 있으면 스킵
+       → 더미 데이터 없으면 insert / 있으면 스킵
+     → 앱 정상 동작
+
+5. 현재 관리 중인 테이블 목록
+   - app_user                  사용자 계정
+   - brand                     브랜드 마스터
+   - brand_sync_history        브랜드 동기화 이력
+   - shop                      매장 마스터
+   - daily_sales               일매출
+   - settlement                정산 확정
+   - settlement_ledger         정산 원장
+   - settlement_sync_history   정산 동기화 이력
+   - menu                      메뉴 시스템 (depth 3/4/5 계층 구조)
+
+6. 새 테이블 추가 방법
+   schema.sql 맨 아래에 CREATE TABLE IF NOT EXISTS 추가
+   → 서버 재시작 시 자동 생성됨
+   → 기존 테이블/데이터에 영향 없음
+
+7. 주의사항
+   - 기존 테이블 컬럼 변경(ALTER)은 schema.sql로 자동 처리 안 됨
+     → IF NOT EXISTS는 테이블 존재 여부만 체크
+     → 컬럼 추가/수정은 직접 DB에서 실행하거나 Flyway/Liquibase 같은
+        마이그레이션 도구 도입 필요 (현재 프로젝트는 미적용)
+   - 운영 환경에서는 mode: always 대신 mode: never 로 바꾸는 게 안전

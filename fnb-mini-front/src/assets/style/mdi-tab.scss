@@ -1,0 +1,93 @@
+/* MDI 탭 바 - 실무: assets/style/common.scss의 .mdi-tab 영역 */
+.mdi-tab {
+  display: flex;
+  align-items: center;
+  background: #f8f9fa;
+  border-bottom: 1px solid #e5e7eb;
+  height: 36px;
+  padding: 0 8px;
+  gap: 4px;
+  overflow-x: auto;
+
+  &::-webkit-scrollbar {
+    height: 3px;
+  }
+  &::-webkit-scrollbar-thumb {
+    background: #d1d5db;
+    border-radius: 2px;
+  }
+
+  .mdi-tab-list {
+    display: flex;
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    gap: 2px;
+    flex: 1;
+  }
+
+  .mdi-tab-item {
+    display: flex;
+    align-items: center;
+    background: #fff;
+    border: 1px solid #e5e7eb;
+    border-radius: 4px 4px 0 0;
+    height: 28px;
+    padding: 0 4px 0 10px;
+    gap: 2px;
+    white-space: nowrap;
+
+    &.active {
+      background: #2c3e50;
+      border-color: #2c3e50;
+
+      .mdi-tab-label {
+        color: #fff;
+      }
+      .mdi-tab-close {
+        color: rgba(255, 255, 255, 0.7);
+        &:hover { color: #fff; }
+      }
+    }
+
+    .mdi-tab-label {
+      font-size: 12px;
+      color: #374151;
+      background: none;
+      border: none;
+      cursor: pointer;
+      padding: 0;
+    }
+
+    .mdi-tab-close {
+      font-size: 14px;
+      color: #9ca3af;
+      background: none;
+      border: none;
+      cursor: pointer;
+      padding: 0 2px;
+      line-height: 1;
+
+      &:hover {
+        color: #374151;
+      }
+    }
+  }
+
+  .mdi-tab-close-all {
+    font-size: 11px;
+    color: #6b7280;
+    background: none;
+    border: 1px solid #e5e7eb;
+    border-radius: 3px;
+    padding: 2px 8px;
+    cursor: pointer;
+    white-space: nowrap;
+    flex-shrink: 0;
+
+    &:hover {
+      background: #f3f4f6;
+      color: #374151;
+    }
+  }
+}

@@ -141,3 +141,39 @@ CREATE TABLE IF NOT EXISTS settlement_sync_history (
     error_message     VARCHAR(500),
     created_at        TIMESTAMP   DEFAULT NOW()
 );
+
+-- ============================================================
+-- 메뉴 시스템
+-- ============================================================
+
+-- 메뉴 마스터
+CREATE TABLE IF NOT EXISTS menu (
+    id              BIGSERIAL PRIMARY KEY,
+    parent_id       BIGINT       REFERENCES menu(id),  -- NULL = depth 3 (최상위)
+    depth           INT          NOT NULL,              -- 3=헤더, 4=사이드 카테고리, 5=실제 메뉴
+    menu_name       VARCHAR(100) NOT NULL,
+    component_name  VARCHAR(100),                       -- depth 5만 값 있음 (예: 'BrandPage')
+    sort_order      INT          NOT NULL DEFAULT 0,
+    use_yn          CHAR(1)      NOT NULL DEFAULT 'Y'
+);
+
+-- depth 3: 헤더 메뉴
+INSERT INTO menu (id, parent_id, depth, menu_name, component_name, sort_order, use_yn) VALUES
+    (1,  NULL, 3, '기준 정보 관리', NULL, 1, 'Y'),
+    (2,  NULL, 3, '동기화 이력',    NULL, 2, 'Y'),
+    (3,  NULL, 3, '정산 관리',      NULL, 3, 'Y')
+ON CONFLICT (id) DO NOTHING;
+
+-- depth 4: 사이드바 카테고리
+INSERT INTO menu (id, parent_id, depth, menu_name, component_name, sort_order, use_yn) VALUES
+    (10, 1, 4, '브랜드', NULL, 1, 'Y'),
+    (20, 2, 4, '동기화', NULL, 1, 'Y'),
+    (30, 3, 4, '매출',   NULL, 1, 'Y')
+ON CONFLICT (id) DO NOTHING;
+
+-- depth 5: 실제 메뉴 (탭에 등록)
+INSERT INTO menu (id, parent_id, depth, menu_name, component_name, sort_order, use_yn) VALUES
+    (100, 10, 5, '브랜드 관리', 'BrandPage',       1, 'Y'),
+    (200, 20, 5, '동기화 이력', 'SyncHistoryPage', 1, 'Y'),
+    (300, 30, 5, '매출 정산',   'SettlementPage',  1, 'Y')
+ON CONFLICT (id) DO NOTHING;

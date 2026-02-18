@@ -1,0 +1,88 @@
+실무 메뉴 로직 개선 아이디어
+==============================================
+
+대상 파일:
+  cjfw-fscps-bo-api/.../biz/common/userInfo/UserInfoService.java
+  selectMenuList() 메서드
+
+==============================================
+1. 현재 문제: DB를 3번 호출하는 중첩 루프 구조
+==============================================
+
+현재 코드:
+  List<MenuDto> menuList = mapper.selectMenuList(param3);   // DB 호출 1번 (depth 3)
+
+  for (MenuDto dto : menuList) {
+      List<MenuDto> menuSubList = mapper.selectMenuList(param4);  // DB 호출 N번 (depth 4)
+      for (MenuDto sub : menuSubList) {
+          List<MenuDto> menuThirdList = mapper.selectMenuList(param5);  // DB 호출 N*M번 (depth 5)
+      }
+  }
+
+문제점:
+  - depth 3이 10개면 DB 호출 최소 11번 이상
+  - depth 3 * depth 4 * depth 5 개수에 비례해서 호출 수 증가
+  - 로그인 시마다 발생하는 비용
+
+==============================================
+2. 개선 방향: DB 1번 + 스트림 재귀 조립
+==============================================
+
+미니 프로젝트(fnb-mini)에서 적용한 방식:
+
+  // DB 1번에 전체 조회
+  List<MenuDto> flatList = mapper.selectAllMenuList(userId);
+
+  // prog_no 기준으로 부모-자식 그룹핑
+  Map<String, List<MenuDto>> groupByParent = flatList.stream()
+      .filter(m -> m.getDepth() > 0)
+      .collect(Collectors.groupingBy(m -> getParentNo(m.getNo(), m.getDepth())));
+
+  // depth 0 (최상위)만 꺼내서 재귀 조립
+  return flatList.stream()
+      .filter(m -> m.getDepth() == 0)
+      .peek(m -> attachSubMenus(m, groupByParent))
+      .collect(Collectors.toList());
+
+  // 재귀 함수
+  private void attachSubMenus(MenuDto parent, Map<String, List<MenuDto>> groupByParent) {
+      List<MenuDto> children = groupByParent.getOrDefault(parent.getNo(), new ArrayList<>());
+      parent.setSubMenus(children.isEmpty() ? null : children);
+      children.forEach(child -> attachSubMenus(child, groupByParent));
+  }
+
+==============================================
+3. 실무 코드에 적용 시 주의점
+==============================================
+
+실무는 parent_id 대신 prog_no 문자열로 계층 표현:
+
+  prog_no 규칙:
+    061200000000  →  depth 3 (최상위)
+    061201000000  →  depth 4 (앞 6자리 = 부모 no)
+    061201010000  →  depth 5 (앞 8자리 = 부모 no)
+
+  getParentNo() 구현 예시:
+    depth 4 → no.substring(0, 6) + "00000000"  (부모 no 복원)
+    depth 5 → no.substring(0, 8) + "0000"      (부모 no 복원)
+
+  또는 쿼리에서 up_prog_no 컬럼으로 미리 계산해서 내려줄 수도 있음
+  (현재 selectMenuList 쿼리에 이미 up_prog_no 계산 로직 있음)
+
+==============================================
+4. 개선 효과
+==============================================
+
+  DB 호출 수:  N번 (중첩 루프) → 1번 (전체 조회)
+  Java 문법:   for 중첩 루프   → stream + 재귀 (Java 8+, 실무 Java 11 지원)
+  가독성:      3단 중첩 루프   → 선언형 파이프라인
+
+  로그인은 자주 발생하지 않지만 DB 호출을 줄이는 건
+  서버 리소스 절약 + 코드 명확성 면에서 개선 가치 있음
+
+==============================================
+5. 참고: 미니 프로젝트 구현 위치
+==============================================
+
+  fnb-mini-back/.../menu/MenuService.java
+  → getMenuTree() + attachSubMenus() 참고
