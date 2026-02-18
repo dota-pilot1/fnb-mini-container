@@ -147,7 +147,7 @@ public class SettlementService {
 
         if (!existingList.isEmpty()) {
             // 재정산: 기존 원장 역분개 처리
-            Settlement prev = existingList.get(0);
+            Settlement prev = existingList.getFirst();
             log.info("재정산 감지 - 기존 원장 역분개 (prevId={})", prev.getId());
             settlementMapper.markLedgerAsDeleted(prev.getId());
 
