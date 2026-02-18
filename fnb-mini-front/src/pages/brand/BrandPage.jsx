@@ -1,15 +1,11 @@
-import { useState, useCallback, useRef } from 'react'
+import { useState, useRef } from 'react'
 import { useForm } from 'react-hook-form'
 import { toast } from 'sonner'
 import BrandSearchForm from '@/components/brand/BrandSearchForm'
 import BrandGrid from '@/components/brand/BrandGrid'
 import BrandDetail from '@/components/brand/BrandDetail'
 import { useTabulator } from '@/hooks/common/use-tabulator'
-import {
-  fetchBrandList,
-  fetchSaveBrands,
-  fetchRetrySync,
-} from '@/api/brand/brand-fetch'
+import { useBrandList, useSaveBrand, useRetrySync } from '@/hooks/brand/use-brand-queries'
 
 /**
  * 브랜드 관리 페이지
@@ -29,35 +25,31 @@ export default function BrandPage() {
     defaultValues: { brandCode: '', brandName: '', useYn: '', syncStatus: '' },
   })
 
-  const [brandList, setBrandList] = useState([])
+  const [searchParams, setSearchParams] = useState({})
   const [selectedBrand, setSelectedBrand] = useState(null)
   const [isNew, setIsNew] = useState(false)
-  const [loading, setLoading] = useState(false)
+
+  const { data: brandList = [], isFetching, refetch } = useBrandList(searchParams)
+  const saveBrand = useSaveBrand()
+  const retrySync = useRetrySync()
 
   // 조회
-  const handleSearch = useCallback(async () => {
-    setLoading(true)
-    try {
-      const params = getValues()
-      // 빈 문자열 제거
-      const cleanParams = Object.fromEntries(
-        Object.entries(params).filter(([, v]) => v !== '')
-      )
-      const res = await fetchBrandList(cleanParams)
-      setBrandList(res.data || [])
-      setSelectedBrand(null)
-      setIsNew(false)
-    } catch (e) {
-      toast.error('조회 중 오류가 발생했습니다.')
-    } finally {
-      setLoading(false)
-    }
-  }, [getValues])
+  const handleSearch = () => {
+    const params = getValues()
+    const cleanParams = Object.fromEntries(
+      Object.entries(params).filter(([, v]) => v !== '')
+    )
+    setSearchParams(cleanParams)
+    // params가 같아도 refetch 가능하도록 직접 호출
+    setTimeout(() => refetch(), 0)
+    setSelectedBrand(null)
+    setIsNew(false)
+  }
 
   // 초기화
   const handleReset = () => {
     resetSearch()
-    setBrandList([])
+    setSearchParams({})
     setSelectedBrand(null)
     setIsNew(false)
   }
@@ -77,9 +69,9 @@ export default function BrandPage() {
   // 저장 (상세폼에서)
   const handleSave = async (data) => {
     try {
-      const res = await fetchSaveBrands([data])
+      const res = await saveBrand.mutateAsync(data)
       toast.success(res.message || '저장되었습니다.')
-      handleSearch()
+      refetch()
     } catch (e) {
       const msg = e.response?.data?.message || '저장 중 오류가 발생했습니다.'
       toast.error(msg)
@@ -94,14 +86,16 @@ export default function BrandPage() {
   // 재시도
   const handleRetry = async (id) => {
     try {
-      const res = await fetchRetrySync(id)
+      const res = await retrySync.mutateAsync(id)
       toast.success(res.message || '재시도가 요청되었습니다.')
-      handleSearch()
+      refetch()
     } catch (e) {
       const msg = e.response?.data?.message || '재시도 중 오류가 발생했습니다.'
       toast.error(msg)
     }
   }
+
+  const loading = isFetching || saveBrand.isPending || retrySync.isPending
 
   return (
     <div className="p-4 space-y-4 max-w-[1600px] mx-auto">

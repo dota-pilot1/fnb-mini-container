@@ -1,10 +1,9 @@
-import { useState, useCallback, useRef } from 'react'
+import { useState, useRef } from 'react'
 import { useForm } from 'react-hook-form'
-import { toast } from 'sonner'
 import SyncHistorySearchForm from '@/components/sync-history/SyncHistorySearchForm'
 import SyncHistoryGrid from '@/components/sync-history/SyncHistoryGrid'
 import { useTabulator } from '@/hooks/common/use-tabulator'
-import { fetchSyncHistoryList } from '@/api/sync-history/sync-history-fetch'
+import { useSyncHistoryList } from '@/hooks/sync-history/use-sync-history-queries'
 
 /**
  * 동기화 이력 페이지
@@ -13,34 +12,28 @@ import { fetchSyncHistoryList } from '@/api/sync-history/sync-history-fetch'
  */
 export default function SyncHistoryPage() {
   const gridRef = useRef(null)
-  const { getData } = useTabulator({ ref: gridRef })
+  useTabulator({ ref: gridRef })
 
   const { register, reset: resetSearch, getValues } = useForm({
     defaultValues: { brandCode: '', syncStatus: '' },
   })
 
-  const [historyList, setHistoryList] = useState([])
-  const [loading, setLoading] = useState(false)
+  const [searchParams, setSearchParams] = useState({})
 
-  const handleSearch = useCallback(async () => {
-    setLoading(true)
-    try {
-      const params = getValues()
-      const cleanParams = Object.fromEntries(
-        Object.entries(params).filter(([, v]) => v !== '')
-      )
-      const res = await fetchSyncHistoryList(cleanParams)
-      setHistoryList(res.data || [])
-    } catch (e) {
-      toast.error('조회 중 오류가 발생했습니다.')
-    } finally {
-      setLoading(false)
-    }
-  }, [getValues])
+  const { data: historyList = [], isFetching, refetch } = useSyncHistoryList(searchParams)
+
+  const handleSearch = () => {
+    const params = getValues()
+    const cleanParams = Object.fromEntries(
+      Object.entries(params).filter(([, v]) => v !== '')
+    )
+    setSearchParams(cleanParams)
+    setTimeout(() => refetch(), 0)
+  }
 
   const handleReset = () => {
     resetSearch()
-    setHistoryList([])
+    setSearchParams({})
   }
 
   return (
@@ -56,7 +49,7 @@ export default function SyncHistoryPage() {
         data={historyList}
       />
 
-      {loading && (
+      {isFetching && (
         <div className="fixed inset-0 bg-black/20 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg px-6 py-4 shadow-lg">
             <p className="text-sm">조회 중...</p>

@@ -1,0 +1,14 @@
+useQuery 를 이해해 보자
+===========================================================
+/**
+ * 브랜드 목록 조회
+ * enabled: false → 검색 버튼 클릭 시 refetch() 호출로 실행
+ */
+export function useBrandList(params) {
+  return useQuery({
+    queryKey: brandKeys.list(params),
+    queryFn: () => fetchBrandList(params),
+    enabled: false,
+    select: (res) => res.data ?? [],
+  })
+===========================================================

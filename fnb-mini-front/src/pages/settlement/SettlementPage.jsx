@@ -1,15 +1,15 @@
-import { useState, useCallback, useRef } from 'react'
+import { useState, useRef } from 'react'
 import { useForm } from 'react-hook-form'
 import { toast } from 'sonner'
 import SettlementSearchForm from '@/components/settlement/SettlementSearchForm'
 import DailySalesGrid from '@/components/settlement/DailySalesGrid'
 import SettlementGrid from '@/components/settlement/SettlementGrid'
 import {
-  fetchDailySales,
-  fetchSettlementList,
-  fetchSettle,
-  fetchRetrySettlement,
-} from '@/api/settlement/settlement-fetch'
+  useDailySales,
+  useSettlementList,
+  useSettle,
+  useRetrySettlement,
+} from '@/hooks/settlement/use-settlement-queries'
 
 export default function SettlementPage() {
   const dailySalesRef = useRef(null)
@@ -19,40 +19,36 @@ export default function SettlementPage() {
     defaultValues: { shopId: '', salesDateFrom: '', salesDateTo: '', status: '' },
   })
 
-  const [dailySalesList, setDailySalesList] = useState([])
-  const [settlementList, setSettlementList] = useState([])
+  const [searchParams, setSearchParams] = useState({})
   const [selectedDailySales, setSelectedDailySales] = useState(null)
   const [selectedSettlement, setSelectedSettlement] = useState(null)
-  const [loading, setLoading] = useState(false)
+
+  const { data: dailySalesList = [], isFetching: isFetchingDailySales, refetch: refetchDailySales } = useDailySales(searchParams)
+  const { data: settlementList = [], isFetching: isFetchingSettlements, refetch: refetchSettlements } = useSettlementList(searchParams)
+  const settle = useSettle()
+  const retrySettlement = useRetrySettlement()
+
+  const refetchAll = () => {
+    refetchDailySales()
+    refetchSettlements()
+  }
 
   // 조회
-  const handleSearch = useCallback(async () => {
-    setLoading(true)
-    try {
-      const params = getValues()
-      const cleanParams = Object.fromEntries(
-        Object.entries(params).filter(([, v]) => v !== '')
-      )
-      const [sales, settlements] = await Promise.all([
-        fetchDailySales(cleanParams),
-        fetchSettlementList(cleanParams),
-      ])
-      setDailySalesList(sales || [])
-      setSettlementList(settlements || [])
-      setSelectedDailySales(null)
-      setSelectedSettlement(null)
-    } catch (e) {
-      toast.error('조회 중 오류가 발생했습니다.')
-    } finally {
-      setLoading(false)
-    }
-  }, [getValues])
+  const handleSearch = () => {
+    const params = getValues()
+    const cleanParams = Object.fromEntries(
+      Object.entries(params).filter(([, v]) => v !== '')
+    )
+    setSearchParams(cleanParams)
+    setTimeout(() => refetchAll(), 0)
+    setSelectedDailySales(null)
+    setSelectedSettlement(null)
+  }
 
   // 초기화
   const handleReset = () => {
     resetSearch()
-    setDailySalesList([])
-    setSettlementList([])
+    setSearchParams({})
     setSelectedDailySales(null)
     setSelectedSettlement(null)
   }
@@ -67,20 +63,17 @@ export default function SettlementPage() {
     // ★ 멱등성 키: 프론트에서 UUID 생성
     const idempotencyKey = crypto.randomUUID()
 
-    setLoading(true)
     try {
-      const res = await fetchSettle({
+      const res = await settle.mutateAsync({
         shopId: selectedDailySales.shopId,
         salesDate: selectedDailySales.salesDate,
         idempotencyKey,
       })
       toast.success(res.message || '정산이 완료되었습니다.')
-      handleSearch()
+      refetchAll()
     } catch (e) {
       const msg = e.response?.data?.message || '정산 중 오류가 발생했습니다.'
       toast.error(msg)
-    } finally {
-      setLoading(false)
     }
   }
 
@@ -95,18 +88,17 @@ export default function SettlementPage() {
       return
     }
 
-    setLoading(true)
     try {
-      const res = await fetchRetrySettlement(selectedSettlement.id)
+      const res = await retrySettlement.mutateAsync(selectedSettlement.id)
       toast.success(res.message || '재시도가 완료되었습니다.')
-      handleSearch()
+      refetchAll()
     } catch (e) {
       const msg = e.response?.data?.message || '재시도 중 오류가 발생했습니다.'
       toast.error(msg)
-    } finally {
-      setLoading(false)
     }
   }
+
+  const loading = isFetchingDailySales || isFetchingSettlements || settle.isPending || retrySettlement.isPending
 
   return (
     <div className="p-4 space-y-4 max-w-[1600px] mx-auto">

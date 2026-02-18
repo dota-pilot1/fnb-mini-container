@@ -1,4 +1,5 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { AuthProvider } from '@/context/AuthContext'
 import ProtectedRoute from '@/components/common/layout/ProtectedRoute'
 import Layout from '@/components/common/layout/Layout'
@@ -7,6 +8,15 @@ import SignupPage from '@/pages/signup/SignupPage'
 import BrandPage from '@/pages/brand/BrandPage'
 import SyncHistoryPage from '@/pages/sync-history/SyncHistoryPage'
 import SettlementPage from '@/pages/settlement/SettlementPage'
+
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      retry: 1,
+      staleTime: 0,
+    },
+  },
+})
 
 /**
  * 실무: router/index.js → createBrowserRouter
@@ -20,21 +30,23 @@ import SettlementPage from '@/pages/settlement/SettlementPage'
  */
 export default function App() {
   return (
-    <AuthProvider>
-      <BrowserRouter>
-        <Routes>
-          <Route path="/login" element={<LoginPage />} />
-          <Route path="/signup" element={<SignupPage />} />
-          <Route element={<ProtectedRoute />}>
-            <Route element={<Layout />}>
-              <Route path="/brand" element={<BrandPage />} />
-              <Route path="/sync-history" element={<SyncHistoryPage />} />
-              <Route path="/settlement" element={<SettlementPage />} />
+    <QueryClientProvider client={queryClient}>
+      <AuthProvider>
+        <BrowserRouter>
+          <Routes>
+            <Route path="/login" element={<LoginPage />} />
+            <Route path="/signup" element={<SignupPage />} />
+            <Route element={<ProtectedRoute />}>
+              <Route element={<Layout />}>
+                <Route path="/brand" element={<BrandPage />} />
+                <Route path="/sync-history" element={<SyncHistoryPage />} />
+                <Route path="/settlement" element={<SettlementPage />} />
+              </Route>
             </Route>
-          </Route>
-          <Route path="*" element={<Navigate to="/brand" replace />} />
-        </Routes>
-      </BrowserRouter>
-    </AuthProvider>
+            <Route path="*" element={<Navigate to="/brand" replace />} />
+          </Routes>
+        </BrowserRouter>
+      </AuthProvider>
+    </QueryClientProvider>
   )
 }
