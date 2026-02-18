@@ -1,0 +1,210 @@
+스트림 고급 연산
+==============================================
+Java 8+ / 실무 Java 11 지원
+전제: 1번 파일(스트림 기본 연산) 먼저 읽을 것
+
+==============================================
+1. flatMap - 중첩 리스트 펼치기
+==============================================
+
+map은 1:1 변환. flatMap은 1:N 변환 후 평탄화.
+
+----------------------------------------------
+1-1. 기본 개념
+----------------------------------------------
+
+  // map을 쓰면 List<List<String>> 이 됨 (중첩 리스트)
+  List<List<String>> nested = menuList.stream()
+      .map(menu -> menu.getSubMenus())   // MenuDto → List<MenuDto>
+      .collect(Collectors.toList());
+
+  // flatMap을 쓰면 List<String> 으로 평탄화됨
+  List<MenuDto> allSubMenus = menuList.stream()
+      .flatMap(menu -> menu.getSubMenus().stream())  // 펼쳐서 하나의 스트림으로
+      .collect(Collectors.toList());
+
+  비유:
+    map     = 각 상자를 다른 상자로 교체
+    flatMap = 각 상자를 열어서 내용물만 꺼내 한 바닥에 쫙 펼침
+
+----------------------------------------------
+1-2. 실무 예시 - 전체 depth 5 메뉴 추출
+----------------------------------------------
+
+  // depth 3 리스트에서 모든 depth 5 메뉴를 하나의 리스트로
+  List<MenuDto> allLeafMenus = depth3List.stream()
+      .flatMap(d3 -> d3.getSubMenus().stream())   // depth 4 펼침
+      .flatMap(d4 -> d4.getSubMenus().stream())   // depth 5 펼침
+      .collect(Collectors.toList());
+
+----------------------------------------------
+1-3. 문자열 분리 예시
+----------------------------------------------
+
+  List<String> sentences = List.of("Hello World", "Java Stream");
+
+  List<String> words = sentences.stream()
+      .flatMap(s -> Arrays.stream(s.split(" ")))
+      .collect(Collectors.toList());
+  // 결과: ["Hello", "World", "Java", "Stream"]
+
+==============================================
+2. sorted - 정렬
+==============================================
+
+----------------------------------------------
+2-1. 기본 정렬 (Comparable 구현된 타입)
+----------------------------------------------
+
+  List<Integer> nums = List.of(3, 1, 4, 1, 5);
+
+  nums.stream()
+      .sorted()                          // 오름차순
+      .collect(Collectors.toList());
+  // 결과: [1, 1, 3, 4, 5]
+
+  nums.stream()
+      .sorted(Comparator.reverseOrder()) // 내림차순
+      .collect(Collectors.toList());
+
+----------------------------------------------
+2-2. Comparator.comparing - 객체 정렬 기준 지정
+----------------------------------------------
+
+  // menuName 기준 오름차순
+  menuList.stream()
+      .sorted(Comparator.comparing(MenuDto::getMenuName))
+      .collect(Collectors.toList());
+
+  // sortOrder 기준 오름차순
+  menuList.stream()
+      .sorted(Comparator.comparing(MenuDto::getSortOrder))
+      .collect(Collectors.toList());
+
+  // 내림차순
+  menuList.stream()
+      .sorted(Comparator.comparing(MenuDto::getSortOrder).reversed())
+      .collect(Collectors.toList());
+
+----------------------------------------------
+2-3. 다중 정렬 기준 (thenComparing)
+----------------------------------------------
+
+  // depth 먼저, 같은 depth 안에서 sortOrder로 정렬
+  menuList.stream()
+      .sorted(Comparator.comparing(MenuDto::getDepth)
+          .thenComparing(MenuDto::getSortOrder))
+      .collect(Collectors.toList());
+
+==============================================
+3. reduce - 집계 (직접 구현)
+==============================================
+
+요소들을 하나의 값으로 합치는 연산.
+sum, max, min 같은 집계를 직접 정의할 때 사용.
+
+----------------------------------------------
+3-1. 기본 형태
+----------------------------------------------
+
+  Optional<T> reduce(BinaryOperator<T> accumulator)
+  T reduce(T identity, BinaryOperator<T> accumulator)
+
+  // identity = 초기값 (연산 결과가 없을 때 반환되는 값)
+
+----------------------------------------------
+3-2. 예시
+----------------------------------------------
+
+  List<Integer> nums = List.of(1, 2, 3, 4, 5);
+
+  // 합계
+  int sum = nums.stream()
+      .reduce(0, (a, b) -> a + b);
+  // 결과: 15
+
+  // 메서드 참조로 축약
+  int sum2 = nums.stream()
+      .reduce(0, Integer::sum);
+
+  // 최댓값
+  Optional<Integer> max = nums.stream()
+      .reduce((a, b) -> a > b ? a : b);
+
+  // 실무 팁:
+  // 단순 합계/최댓값은 reduce 대신 아래가 더 간결함
+  int sum3  = nums.stream().mapToInt(Integer::intValue).sum();
+  int max2  = nums.stream().mapToInt(Integer::intValue).max().getAsInt();
+
+----------------------------------------------
+3-3. 문자열 연결 예시
+----------------------------------------------
+
+  List<String> words = List.of("Hello", "World", "Java");
+
+  String result = words.stream()
+      .reduce("", (a, b) -> a + " " + b);
+  // 결과: " Hello World Java"  (앞에 공백 주의)
+
+  // 실무에서는 joining이 더 적합 → 3번 파일 참고
+  String result2 = words.stream()
+      .collect(Collectors.joining(" "));
+  // 결과: "Hello World Java"
+
+==============================================
+4. peek - 디버깅 전용 중간 연산
+==============================================
+
+(1번 파일에서 언급했지만 주의사항 보충)
+
+----------------------------------------------
+4-1. 올바른 사용 (로깅)
+----------------------------------------------
+
+  list.stream()
+      .filter(m -> m.getDepth() == 3)
+      .peek(m -> log.debug("depth3 통과: {}", m.getMenuName()))
+      .map(MenuDto::getMenuName)
+      .collect(Collectors.toList());
+
+----------------------------------------------
+4-2. 잘못된 사용 - 상태 변경에 쓰지 말 것
+----------------------------------------------
+
+  // 나쁜 예: peek으로 객체 내부 변경
+  list.stream()
+      .peek(m -> m.setUseYn("N"))   // 부작용 발생, 예측 어려움
+      .collect(Collectors.toList());
+
+  // 올바른 예: map으로 변환
+  list.stream()
+      .map(m -> { m.setUseYn("N"); return m; })
+      .collect(Collectors.toList());
+
+  // 더 올바른 예: forEach로 분리
+  list.forEach(m -> m.setUseYn("N"));
+
+==============================================
+5. min / max - 최솟값 / 최댓값
+==============================================
+
+  Optional<MenuDto> firstMenu = menuList.stream()
+      .min(Comparator.comparing(MenuDto::getSortOrder));
+
+  Optional<MenuDto> lastMenu = menuList.stream()
+      .max(Comparator.comparing(MenuDto::getSortOrder));
+
+  firstMenu.ifPresent(m -> System.out.println(m.getMenuName()));
+
+==============================================
+6. 연산 조합 예시 (실무 수준)
+==============================================
+
+  // depth 4 메뉴를 sortOrder 순으로 정렬 후
+  // menuName만 추출해서 콤마 구분 문자열로
+  String result = menuList.stream()
+      .filter(m -> m.getDepth() == 4)
+      .sorted(Comparator.comparing(MenuDto::getSortOrder))
+      .map(MenuDto::getMenuName)
+      .collect(Collectors.joining(", "));
+  // 결과 예시: "브랜드, 동기화, 매출"

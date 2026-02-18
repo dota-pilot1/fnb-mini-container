@@ -167,6 +167,7 @@ ON CONFLICT (id) DO NOTHING;
 -- depth 4: 사이드바 카테고리
 INSERT INTO menu (id, parent_id, depth, menu_name, component_name, sort_order, use_yn) VALUES
     (10, 1, 4, '브랜드', NULL, 1, 'Y'),
+    (11, 1, 4, '시스템', NULL, 2, 'Y'),
     (20, 2, 4, '동기화', NULL, 1, 'Y'),
     (30, 3, 4, '매출',   NULL, 1, 'Y')
 ON CONFLICT (id) DO NOTHING;
@@ -174,6 +175,7 @@ ON CONFLICT (id) DO NOTHING;
 -- depth 5: 실제 메뉴 (탭에 등록)
 INSERT INTO menu (id, parent_id, depth, menu_name, component_name, sort_order, use_yn) VALUES
     (100, 10, 5, '브랜드 관리', 'BrandPage',       1, 'Y'),
+    (110, 11, 5, '메뉴 관리',   'MenuMngPage',     1, 'Y'),
     (200, 20, 5, '동기화 이력', 'SyncHistoryPage', 1, 'Y'),
     (300, 30, 5, '매출 정산',   'SettlementPage',  1, 'Y')
 ON CONFLICT (id) DO NOTHING;

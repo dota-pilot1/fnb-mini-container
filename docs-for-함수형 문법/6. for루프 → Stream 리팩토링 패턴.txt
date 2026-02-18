@@ -1,0 +1,292 @@
+for루프 → Stream 리팩토링 패턴
+==============================================
+Java 8+ / 실무 Java 11 지원
+전제: 1~5번 파일 모두 읽은 후 종합 복습 겸 실무 적용 가이드
+
+==============================================
+1. 단순 변환 (map + collect)
+==============================================
+
+----------------------------------------------
+Before
+----------------------------------------------
+
+  List<String> names = new ArrayList<>();
+  for (MenuDto m : menuList) {
+      names.add(m.getMenuName());
+  }
+
+----------------------------------------------
+After
+----------------------------------------------
+
+  List<String> names = menuList.stream()
+      .map(MenuDto::getMenuName)
+      .collect(Collectors.toList());
+
+==============================================
+2. 조건 필터링 후 수집 (filter + collect)
+==============================================
+
+----------------------------------------------
+Before
+----------------------------------------------
+
+  List<MenuDto> result = new ArrayList<>();
+  for (MenuDto m : menuList) {
+      if (m.getDepth() == 5 && "Y".equals(m.getUseYn())) {
+          result.add(m);
+      }
+  }
+
+----------------------------------------------
+After
+----------------------------------------------
+
+  List<MenuDto> result = menuList.stream()
+      .filter(m -> m.getDepth() == 5)
+      .filter(m -> "Y".equals(m.getUseYn()))
+      .collect(Collectors.toList());
+
+  // 또는 and 조건으로 합치기
+  List<MenuDto> result = menuList.stream()
+      .filter(m -> m.getDepth() == 5 && "Y".equals(m.getUseYn()))
+      .collect(Collectors.toList());
+
+==============================================
+3. 리스트 → Map 변환 (toMap)
+==============================================
+
+----------------------------------------------
+Before
+----------------------------------------------
+
+  Map<Long, MenuDto> menuMap = new HashMap<>();
+  for (MenuDto m : menuList) {
+      menuMap.put(m.getId(), m);
+  }
+
+----------------------------------------------
+After
+----------------------------------------------
+
+  Map<Long, MenuDto> menuMap = menuList.stream()
+      .collect(Collectors.toMap(MenuDto::getId, m -> m));
+
+==============================================
+4. 그룹핑 (groupingBy)
+==============================================
+
+----------------------------------------------
+Before
+----------------------------------------------
+
+  Map<Long, List<MenuDto>> groupByParent = new HashMap<>();
+  for (MenuDto m : menuList) {
+      if (m.getParentId() != null) {
+          groupByParent
+              .computeIfAbsent(m.getParentId(), k -> new ArrayList<>())
+              .add(m);
+      }
+  }
+
+----------------------------------------------
+After
+----------------------------------------------
+
+  Map<Long, List<MenuDto>> groupByParent = menuList.stream()
+      .filter(m -> m.getParentId() != null)
+      .collect(Collectors.groupingBy(MenuDto::getParentId));
+
+  // MenuService의 트리 조립이 바로 이 방식
+
+==============================================
+5. 중첩 루프 평탄화 (flatMap)
+==============================================
+
+----------------------------------------------
+Before
+----------------------------------------------
+
+  List<MenuDto> allLeaf = new ArrayList<>();
+  for (MenuDto d3 : depth3List) {
+      for (MenuDto d4 : d3.getSubMenus()) {
+          for (MenuDto d5 : d4.getSubMenus()) {
+              allLeaf.add(d5);
+          }
+      }
+  }
+
+----------------------------------------------
+After
+----------------------------------------------
+
+  List<MenuDto> allLeaf = depth3List.stream()
+      .flatMap(d3 -> d3.getSubMenus().stream())
+      .flatMap(d4 -> d4.getSubMenus().stream())
+      .collect(Collectors.toList());
+
+==============================================
+6. 집계 (reduce / 집계형 stream 메서드)
+==============================================
+
+----------------------------------------------
+Before
+----------------------------------------------
+
+  int total = 0;
+  for (MenuDto m : menuList) {
+      total += m.getSortOrder();
+  }
+
+----------------------------------------------
+After (방법 1: reduce)
+----------------------------------------------
+
+  int total = menuList.stream()
+      .map(MenuDto::getSortOrder)
+      .reduce(0, Integer::sum);
+
+----------------------------------------------
+After (방법 2: mapToInt - 더 간결)
+----------------------------------------------
+
+  int total = menuList.stream()
+      .mapToInt(MenuDto::getSortOrder)
+      .sum();
+
+==============================================
+7. 조기 종료 패턴 (anyMatch / findFirst)
+==============================================
+
+----------------------------------------------
+Before - 조건 만족하는 것 하나라도 있는지 확인
+----------------------------------------------
+
+  boolean found = false;
+  for (MenuDto m : menuList) {
+      if (m.getDepth() == 5) {
+          found = true;
+          break;
+      }
+  }
+
+----------------------------------------------
+After
+----------------------------------------------
+
+  boolean found = menuList.stream()
+      .anyMatch(m -> m.getDepth() == 5);
+
+----------------------------------------------
+Before - 조건에 맞는 첫 번째 항목 찾기
+----------------------------------------------
+
+  MenuDto found = null;
+  for (MenuDto m : menuList) {
+      if (m.getDepth() == 3) {
+          found = m;
+          break;
+      }
+  }
+
+----------------------------------------------
+After
+----------------------------------------------
+
+  Optional<MenuDto> found = menuList.stream()
+      .filter(m -> m.getDepth() == 3)
+      .findFirst();
+
+  MenuDto menu = found.orElseThrow(() -> new RuntimeException("없음"));
+
+==============================================
+8. null 체크 포함 패턴
+==============================================
+
+----------------------------------------------
+Before - null 방어 코드가 섞인 루프
+----------------------------------------------
+
+  List<String> names = new ArrayList<>();
+  for (MenuDto m : menuList) {
+      if (m != null && m.getMenuName() != null) {
+          names.add(m.getMenuName());
+      }
+  }
+
+----------------------------------------------
+After
+----------------------------------------------
+
+  List<String> names = menuList.stream()
+      .filter(Objects::nonNull)                    // null 객체 제거
+      .map(MenuDto::getMenuName)
+      .filter(Objects::nonNull)                    // null 이름 제거
+      .collect(Collectors.toList());
+
+==============================================
+9. 실무 수준 종합 예시 - MenuService 핵심 로직
+==============================================
+
+----------------------------------------------
+Before (실무 현재 방식 - DB 3번 호출 중첩 루프)
+----------------------------------------------
+
+  List<MenuDto> depth3List = mapper.selectMenuList(param3);
+
+  for (MenuDto d3 : depth3List) {
+      List<MenuDto> depth4List = mapper.selectMenuList(param4);
+      d3.setSubMenus(depth4List);
+
+      for (MenuDto d4 : depth4List) {
+          List<MenuDto> depth5List = mapper.selectMenuList(param5);
+          d4.setSubMenus(depth5List);
+      }
+  }
+
+----------------------------------------------
+After (미니 프로젝트 방식 - DB 1번 + Stream 재귀)
+----------------------------------------------
+
+  // 1. DB 1번에 전체 조회
+  List<MenuDto> flatList = mapper.selectAllMenuList();
+
+  // 2. parentId 기준으로 그룹핑
+  Map<Long, List<MenuDto>> groupByParent = flatList.stream()
+      .filter(m -> m.getParentId() != null)
+      .collect(Collectors.groupingBy(MenuDto::getParentId));
+
+  // 3. depth 3만 꺼내서 재귀 조립
+  return flatList.stream()
+      .filter(m -> m.getDepth() == 3)
+      .peek(m -> attachSubMenus(m, groupByParent))
+      .collect(Collectors.toList());
+
+  // 4. 재귀 함수
+  private void attachSubMenus(MenuDto parent,
+                               Map<Long, List<MenuDto>> groupByParent) {
+      List<MenuDto> children =
+          groupByParent.getOrDefault(parent.getId(), new ArrayList<>());
+      parent.setSubMenus(children.isEmpty() ? null : children);
+      children.forEach(child -> attachSubMenus(child, groupByParent));
+  }
+
+  개선 효과:
+    DB 호출: N번 → 1번
+    코드:    3단 중첩 루프 → 선언형 파이프라인
+
+==============================================
+10. 언제 Stream 쓰고 언제 for 쓸지
+==============================================
+
+  Stream 추천:
+    - 필터링 + 변환 + 수집이 이어질 때
+    - 그룹핑, 집계 등 Collectors가 필요할 때
+    - 코드를 선언형(무엇을)으로 표현하고 싶을 때
+
+  for 루프가 나을 때:
+    - 인덱스가 필요할 때 (i 사용)
+    - 중간에 예외를 던져야 할 때 (checked exception)
+    - 성능이 매우 민감한 단순 반복 (대용량 + tight loop)
+    - 디버깅이 복잡해지면 가독성 우선으로 for 선택

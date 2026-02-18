@@ -1,0 +1,219 @@
+Collectors 완전 정복
+==============================================
+Java 8+ / 실무 Java 11 지원
+전제: 1번 파일(스트림 기본 연산) 먼저 읽을 것
+
+collect(Collectors.xxx()) 형태로 스트림의 최종 연산에 사용.
+실무에서 가장 자주 찾아보게 되는 Collector 종류 모음.
+
+==============================================
+1. toList / toSet / toUnmodifiableList
+==============================================
+
+----------------------------------------------
+1-1. toList - 가장 기본
+----------------------------------------------
+
+  List<MenuDto> result = menuList.stream()
+      .filter(m -> m.getDepth() == 5)
+      .collect(Collectors.toList());
+
+  반환 타입: ArrayList (수정 가능)
+
+----------------------------------------------
+1-2. toSet - 중복 제거
+----------------------------------------------
+
+  Set<String> names = menuList.stream()
+      .map(MenuDto::getMenuName)
+      .collect(Collectors.toSet());
+
+  주의: 순서 보장 안 됨
+
+----------------------------------------------
+1-3. toUnmodifiableList - 읽기 전용 리스트
+----------------------------------------------
+
+  List<MenuDto> readOnly = menuList.stream()
+      .filter(m -> m.getDepth() == 3)
+      .collect(Collectors.toUnmodifiableList());
+
+  // readOnly.add(...)  → UnsupportedOperationException 발생
+
+==============================================
+2. toMap - 리스트를 Map으로 변환
+==============================================
+
+----------------------------------------------
+2-1. 기본 형태
+----------------------------------------------
+
+  Collectors.toMap(
+      keyMapper,    // 각 요소에서 키 추출
+      valueMapper   // 각 요소에서 값 추출
+  )
+
+----------------------------------------------
+2-2. id → MenuDto 매핑 (빠른 조회용)
+----------------------------------------------
+
+  Map<Long, MenuDto> menuMap = menuList.stream()
+      .collect(Collectors.toMap(
+          MenuDto::getId,       // 키: id
+          m -> m                // 값: MenuDto 자체
+      ));
+
+  // 이후 O(1) 조회 가능
+  MenuDto menu = menuMap.get(100L);
+
+----------------------------------------------
+2-3. 키 충돌 처리 (mergeFunction)
+----------------------------------------------
+
+  // 같은 키가 2개 이상이면 기본적으로 예외 발생
+  // mergeFunction으로 충돌 시 어떤 값을 취할지 지정
+
+  Map<Integer, MenuDto> map = menuList.stream()
+      .collect(Collectors.toMap(
+          MenuDto::getDepth,
+          m -> m,
+          (existing, newOne) -> existing   // 기존 값 유지 (앞 우선)
+      ));
+
+----------------------------------------------
+2-4. id → menuName 매핑
+----------------------------------------------
+
+  Map<Long, String> idToName = menuList.stream()
+      .collect(Collectors.toMap(
+          MenuDto::getId,
+          MenuDto::getMenuName
+      ));
+
+==============================================
+3. groupingBy - 그룹핑
+==============================================
+
+실무에서 가장 많이 쓰는 Collector.
+MenuService의 트리 조립이 이 방식.
+
+----------------------------------------------
+3-1. 기본 그룹핑
+----------------------------------------------
+
+  // depth 값 기준으로 그룹핑
+  Map<Integer, List<MenuDto>> byDepth = menuList.stream()
+      .collect(Collectors.groupingBy(MenuDto::getDepth));
+
+  // 결과:
+  // {3: [기준정보관리, 동기화이력, 정산관리],
+  //  4: [브랜드, 동기화, 매출],
+  //  5: [브랜드관리, 동기화이력, 매출정산]}
+
+----------------------------------------------
+3-2. parentId 기준 그룹핑 (트리 조립의 핵심)
+----------------------------------------------
+
+  // MenuService에서 실제로 쓴 방식
+  Map<Long, List<MenuDto>> groupByParent = menuList.stream()
+      .filter(m -> m.getParentId() != null)
+      .collect(Collectors.groupingBy(MenuDto::getParentId));
+
+  // 결과:
+  // {1: [브랜드],        ← depth 3 id=1의 자식들
+  //  2: [동기화],        ← depth 3 id=2의 자식들
+  //  10: [브랜드관리],   ← depth 4 id=10의 자식들
+  //  ...}
+
+----------------------------------------------
+3-3. downstream Collector - 그룹핑 후 추가 가공
+----------------------------------------------
+
+  // 그룹별 개수 세기
+  Map<Integer, Long> countByDepth = menuList.stream()
+      .collect(Collectors.groupingBy(
+          MenuDto::getDepth,
+          Collectors.counting()         // downstream: counting
+      ));
+  // 결과: {3: 3, 4: 3, 5: 3}
+
+  // 그룹별 이름만 추출
+  Map<Integer, List<String>> namesByDepth = menuList.stream()
+      .collect(Collectors.groupingBy(
+          MenuDto::getDepth,
+          Collectors.mapping(MenuDto::getMenuName, Collectors.toList())
+      ));
+
+==============================================
+4. joining - 문자열 합치기
+==============================================
+
+----------------------------------------------
+4-1. 단순 연결
+----------------------------------------------
+
+  String result = List.of("A", "B", "C").stream()
+      .collect(Collectors.joining());
+  // 결과: "ABC"
+
+----------------------------------------------
+4-2. 구분자
+----------------------------------------------
+
+  String result = List.of("기준정보관리", "동기화이력", "정산관리").stream()
+      .collect(Collectors.joining(", "));
+  // 결과: "기준정보관리, 동기화이력, 정산관리"
+
+----------------------------------------------
+4-3. 구분자 + prefix + suffix
+----------------------------------------------
+
+  String result = menuNames.stream()
+      .collect(Collectors.joining(", ", "[", "]"));
+  // 결과: "[기준정보관리, 동기화이력, 정산관리]"
+
+----------------------------------------------
+4-4. 실무 활용 예시 (IN 절 생성)
+----------------------------------------------
+
+  String inClause = ids.stream()
+      .map(String::valueOf)
+      .collect(Collectors.joining(", ", "(", ")"));
+  // 결과: "(1, 2, 3)"
+  // → "WHERE id IN " + inClause 형태로 활용
+
+==============================================
+5. 집계형 downstream Collectors
+==============================================
+
+groupingBy와 함께 주로 사용.
+
+  Collectors.counting()              // 개수
+  Collectors.summingInt(Function)    // 합계 (int)
+  Collectors.summingLong(Function)   // 합계 (long)
+  Collectors.averagingInt(Function)  // 평균
+  Collectors.maxBy(Comparator)       // 최댓값
+  Collectors.minBy(Comparator)       // 최솟값
+
+  예시:
+    // depth별 sortOrder 합계
+    Map<Integer, Integer> sumByDepth = menuList.stream()
+        .collect(Collectors.groupingBy(
+            MenuDto::getDepth,
+            Collectors.summingInt(MenuDto::getSortOrder)
+        ));
+
+==============================================
+6. 자주 쓰는 것 한눈에 보기
+==============================================
+
+  목적                       | Collector
+  ---------------------------+----------------------------------
+  리스트로 수집               | Collectors.toList()
+  중복 제거 후 Set으로        | Collectors.toSet()
+  Map으로 변환               | Collectors.toMap(key, value)
+  그룹핑                     | Collectors.groupingBy(분류기준)
+  문자열 합치기               | Collectors.joining(구분자)
+  개수 세기                  | Collectors.counting()
+  합계                       | Collectors.summingInt(함수)
+  읽기 전용 리스트            | Collectors.toUnmodifiableList()

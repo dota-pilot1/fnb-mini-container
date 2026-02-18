@@ -1,0 +1,194 @@
+스트림 기본 연산
+==============================================
+Java 8+ / 실무 Java 11 지원
+
+==============================================
+1. Stream이란
+==============================================
+
+컬렉션(List, Set 등)을 함수형 방식으로 처리하는 파이프라인.
+DB의 SELECT ... WHERE ... ORDER BY 를 Java 코드로 옮긴 느낌.
+
+핵심 특징:
+  - 원본 컬렉션을 변경하지 않음 (새 스트림/리스트 반환)
+  - 지연 평가: 최종 연산이 호출되기 전까지 중간 연산은 실행 안 됨
+  - 한 번 소비하면 재사용 불가 (다시 쓰려면 stream() 다시 호출)
+
+==============================================
+2. 스트림 생성
+==============================================
+
+  List<String> list = List.of("A", "B", "C");
+
+  list.stream()              // List → Stream
+  Arrays.stream(array)       // 배열 → Stream
+  Stream.of("A", "B", "C")   // 직접 생성
+  Stream.empty()             // 빈 스트림
+
+==============================================
+3. 중간 연산 (Intermediate Operations)
+==============================================
+
+반환값이 Stream → 체이닝 가능 → 최종 연산 전까지 실행 안 됨
+
+----------------------------------------------
+3-1. filter(Predicate) - 조건에 맞는 것만 통과
+----------------------------------------------
+
+  List<Integer> numbers = List.of(1, 2, 3, 4, 5);
+
+  numbers.stream()
+      .filter(n -> n > 3)      // 4, 5 만 통과
+      .collect(Collectors.toList());
+  // 결과: [4, 5]
+
+  실무 예시 (MenuService):
+    flatList.stream()
+        .filter(m -> m.getDepth() == 3)   // depth 3인 것만
+        .collect(Collectors.toList());
+
+----------------------------------------------
+3-2. map(Function) - 각 요소를 변환
+----------------------------------------------
+
+  List<String> names = List.of("홍길동", "이순신");
+
+  names.stream()
+      .map(name -> name.length())   // 각 이름의 길이로 변환
+      .collect(Collectors.toList());
+  // 결과: [3, 3]
+
+  메서드 참조로 축약:
+    names.stream()
+        .map(String::length)
+        .collect(Collectors.toList());
+
+  실무 예시 (DTO → 다른 형태로 변환):
+    menuList.stream()
+        .map(MenuDto::getMenuName)       // MenuDto 리스트 → String 리스트
+        .collect(Collectors.toList());
+
+----------------------------------------------
+3-3. distinct() - 중복 제거
+----------------------------------------------
+
+  List<Integer> nums = List.of(1, 2, 2, 3, 3, 3);
+
+  nums.stream()
+      .distinct()
+      .collect(Collectors.toList());
+  // 결과: [1, 2, 3]
+
+----------------------------------------------
+3-4. limit(n) / skip(n) - 개수 제한 / 건너뛰기
+----------------------------------------------
+
+  list.stream()
+      .skip(2)      // 앞 2개 건너뜀
+      .limit(3)     // 이후 최대 3개만
+      .collect(Collectors.toList());
+
+----------------------------------------------
+3-5. peek(Consumer) - 디버깅용 중간 확인
+----------------------------------------------
+
+  list.stream()
+      .filter(m -> m.getDepth() == 3)
+      .peek(m -> System.out.println("통과: " + m.getMenuName()))  // 로그 찍기
+      .collect(Collectors.toList());
+
+  주의: peek은 부수 작업(로깅)용. 원소를 변환하려면 map 써야 함.
+
+==============================================
+4. 최종 연산 (Terminal Operations)
+==============================================
+
+반환값이 Stream이 아님 → 파이프라인 종료 → 실제 실행 시작
+
+----------------------------------------------
+4-1. collect(Collector) - 리스트/맵 등으로 수집
+----------------------------------------------
+
+  stream.collect(Collectors.toList())    // List로
+  stream.collect(Collectors.toSet())     // Set으로 (중복 제거)
+  stream.collect(Collectors.joining(",")) // 문자열 합치기
+
+  → Collectors 종류는 3번 파일 참고
+
+----------------------------------------------
+4-2. forEach(Consumer) - 각 요소에 동작 수행
+----------------------------------------------
+
+  list.stream()
+      .forEach(item -> System.out.println(item));
+
+  // 메서드 참조로 축약
+  list.stream()
+      .forEach(System.out::println);
+
+  주의: forEach는 반환값 없음. 결과를 모을 때는 collect 사용.
+
+----------------------------------------------
+4-3. count() - 개수 반환
+----------------------------------------------
+
+  long count = list.stream()
+      .filter(m -> m.getDepth() == 5)
+      .count();
+
+----------------------------------------------
+4-4. anyMatch / allMatch / noneMatch - 조건 검사
+----------------------------------------------
+
+  boolean hasActive = list.stream()
+      .anyMatch(m -> m.getUseYn().equals("Y"));  // 하나라도 Y면 true
+
+  boolean allActive = list.stream()
+      .allMatch(m -> m.getUseYn().equals("Y"));  // 전부 Y면 true
+
+  boolean noneDeleted = list.stream()
+      .noneMatch(m -> m.getUseYn().equals("N")); // 하나도 N 없으면 true
+
+----------------------------------------------
+4-5. findFirst() - 첫 번째 요소 반환 (Optional)
+----------------------------------------------
+
+  Optional<MenuDto> first = list.stream()
+      .filter(m -> m.getDepth() == 3)
+      .findFirst();
+
+  // Optional에서 꺼내기
+  first.ifPresent(m -> System.out.println(m.getMenuName()));
+
+  → Optional은 5번 파일 참고
+
+==============================================
+5. 전체 파이프라인 예시
+==============================================
+
+  // depth 5 메뉴 중 사용 중인 것의 이름만 추출
+  List<String> activeMenuNames = menuList.stream()
+      .filter(m -> m.getDepth() == 5)
+      .filter(m -> "Y".equals(m.getUseYn()))
+      .map(MenuDto::getMenuName)
+      .collect(Collectors.toList());
+
+  // 풀어서 읽으면:
+  // menuList에서
+  // depth가 5인 것만 걸러서
+  // useYn이 Y인 것만 걸러서
+  // menuName으로 변환해서
+  // 리스트로 수집해라
+
+==============================================
+6. 중간 연산 vs 최종 연산 구분 요약
+==============================================
+
+  중간 연산 (Stream 반환, 지연 실행):
+    filter, map, flatMap, distinct, sorted, peek, limit, skip
+
+  최종 연산 (Stream 아닌 값 반환, 즉시 실행):
+    collect, forEach, count, anyMatch, allMatch, noneMatch,
+    findFirst, findAny, reduce, min, max, toArray
+
+  → 최종 연산이 없으면 중간 연산은 아무것도 실행되지 않는다.

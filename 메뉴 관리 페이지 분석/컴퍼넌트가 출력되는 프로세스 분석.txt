@@ -1,0 +1,177 @@
+컴포넌트가 출력되는 프로세스 분석
+==============================================
+
+메뉴(depth 5)를 클릭했을 때 해당 컴포넌트가 화면에 렌더링되기까지의
+전체 흐름을 단계별로 정리.
+
+==============================================
+전체 흐름 요약
+==============================================
+
+  사이드바 메뉴 클릭
+    → LeftMenu: addTab(item, activeHeaderId) 호출
+    → TabContext: tabs 배열에 탭 추가, activeTabId 갱신
+    → Layout: activeTab.componentName 읽음
+    → componentRegistry: componentName → lazy 컴포넌트 매핑
+    → Suspense: 컴포넌트 lazy load 후 렌더링
+
+==============================================
+1단계: 사이드바 메뉴 클릭 (LeftMenu.jsx)
+==============================================
+
+  파일: fnb-mini-front/src/components/common/layout/LeftMenu.jsx
+
+  depth 5 버튼 클릭 시:
+    <button onClick={() => addTab(item, activeHeaderId)}>
+        {item.menuName}
+    </button>
+
+  전달하는 값:
+    item          = { id: 110, menuName: '메뉴 관리', componentName: 'MenuMngPage', ... }
+    activeHeaderId = 현재 활성 헤더(depth 3)의 id (예: 1)
+
+  → addTab은 TabContext에서 가져온 함수
+
+==============================================
+2단계: 탭 추가 (TabContext.jsx)
+==============================================
+
+  파일: fnb-mini-front/src/context/TabContext.jsx
+
+  addTab(menu, headerMenuId) 실행:
+
+    Step 1. 이미 열린 탭인지 확인
+      const exists = tabs.find(t => t.menuId === menu.id)
+      → 이미 있으면 해당 탭을 활성화만 하고 종료 (중복 탭 방지)
+
+    Step 2. 최대 탭 수 확인 (MAX_TABS = 12)
+      → 초과 시 alert 후 종료
+
+    Step 3. 새 탭 객체 생성
+      const newTab = {
+        id:            crypto.randomUUID(),   // 탭 고유 식별자
+        menuId:        menu.id,               // 110
+        menuName:      menu.menuName,         // '메뉴 관리'
+        componentName: menu.componentName,    // 'MenuMngPage'  ← 핵심
+        headerMenuId,                         // 1 (어느 헤더 소속인지)
+      }
+
+    Step 4. 상태 갱신
+      setTabs(prev => [...prev, newTab])   // tabs 배열에 추가
+      setActiveTabId(newTab.id)            // 새 탭을 활성화
+
+  → tabs, activeTabId 상태가 바뀌면 구독 중인 컴포넌트 리렌더링
+
+==============================================
+3단계: 렌더링할 컴포넌트 결정 (Layout.jsx)
+==============================================
+
+  파일: fnb-mini-front/src/components/common/layout/Layout.jsx
+
+  // 현재 활성 탭 찾기
+  const activeTab = tabs.find(t => t.id === activeTabId)
+
+  // componentName으로 레지스트리에서 컴포넌트 꺼내기
+  const ActiveComponent = activeTab
+      ? componentRegistry[activeTab.componentName]
+      : null
+
+  예시:
+    activeTab.componentName = 'MenuMngPage'
+    componentRegistry['MenuMngPage'] = lazy(() => import('@/pages/menu/MenuMngPage'))
+    → ActiveComponent = lazy 컴포넌트
+
+==============================================
+4단계: 컴포넌트 레지스트리 (componentRegistry.js)
+==============================================
+
+  파일: fnb-mini-front/src/componentRegistry.js
+
+  const componentRegistry = {
+    BrandPage:       lazy(() => import('@/pages/brand/BrandPage')),
+    SyncHistoryPage: lazy(() => import('@/pages/sync-history/SyncHistoryPage')),
+    SettlementPage:  lazy(() => import('@/pages/settlement/SettlementPage')),
+    MenuMngPage:     lazy(() => import('@/pages/menu/MenuMngPage')),
+  }
+
+  핵심 설계:
+    - DB에는 문자열 키('MenuMngPage')만 저장
+    - 이 파일에서 키 → 실제 파일 경로 매핑
+    - lazy()로 감싸서 실제로 탭이 열릴 때 번들 파일 로드 (code splitting)
+
+  lazy() 동작:
+    - 처음 렌더링 시 해당 JS 번들을 네트워크로 불러옴
+    - 이후에는 캐시에서 즉시 사용
+
+==============================================
+5단계: Suspense로 렌더링 (Layout.jsx)
+==============================================
+
+  파일: fnb-mini-front/src/components/common/layout/Layout.jsx
+
+  <Suspense fallback={<div>로딩 중...</div>}>
+      <ActiveComponent key={activeTab.id} />
+  </Suspense>
+
+  Suspense 역할:
+    - lazy 컴포넌트가 로드되는 동안 fallback("로딩 중...") 표시
+    - 로드 완료되면 실제 컴포넌트로 교체
+
+  key={activeTab.id} 의 의미:
+    - 탭마다 고유한 key 부여
+    - 같은 컴포넌트를 다른 탭으로 두 번 열어도 각각 독립적인 상태 유지
+    - 탭이 달라지면 key가 달라져서 React가 컴포넌트를 새로 마운트함
+
+==============================================
+전체 프로세스 시각화
+==============================================
+
+  [사용자]
+    ↓ 사이드바 "메뉴 관리" 클릭
+  [LeftMenu.jsx]
+    ↓ addTab({ id:110, componentName:'MenuMngPage', ... }, headerMenuId:1)
+  [TabContext.jsx]
+    ↓ newTab 생성, tabs 배열 추가, activeTabId 갱신
+  [Layout.jsx]  ← tabs/activeTabId 상태 변화로 리렌더링
+    ↓ activeTab.componentName = 'MenuMngPage'
+    ↓ componentRegistry['MenuMngPage'] = lazy(...)
+  [componentRegistry.js]
+    ↓ lazy(() => import('@/pages/menu/MenuMngPage'))
+  [번들러 (Vite)]
+    ↓ MenuMngPage.js 청크 파일 네트워크 로드
+  [Suspense]
+    ↓ 로드 완료 후 <MenuMngPage key={tabId} /> 렌더링
+  [화면]
+    → 메뉴 관리 페이지 표시
+
+==============================================
+핵심 설계 포인트 2가지
+==============================================
+
+1. componentName은 문자열로만 DB에 저장
+   - DB: component_name = 'MenuMngPage'
+   - 코드: componentRegistry['MenuMngPage'] 로 실제 컴포넌트 연결
+   - 새 메뉴 추가 시 DB insert + componentRegistry 등록만 하면 됨
+   - 라우터(react-router) 수정 불필요
+   - URL은 항상 /main 고정 (탭 SPA 방식)
+
+2. lazy + Suspense = 코드 스플리팅
+   - 앱 초기 로드 시 모든 페이지 JS를 다 받지 않음
+   - 해당 탭이 처음 열릴 때만 그 페이지의 JS를 로드
+   - 탭을 많이 추가해도 초기 로딩 속도에 영향 없음
+
+==============================================
+실무와의 차이
+==============================================
+
+  실무 (동적 import):
+    menu.comp = retryLazy(() => import(`./${menu.component}.jsx`))
+    → 문자열로 경로를 동적으로 조합
+    → 번들러가 정적 분석 불가 (최적화 어려움)
+    → 오타가 런타임에서야 발견됨
+
+  미니 (정적 레지스트리):
+    componentRegistry['MenuMngPage'] = lazy(() => import('@/pages/menu/MenuMngPage'))
+    → 경로가 코드에 명시됨
+    → 번들러 정적 분석 가능 (tree shaking, code splitting 정확)
+    → 오타 시 undefined → 즉시 화면에서 감지 가능

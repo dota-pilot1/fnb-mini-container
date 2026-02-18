@@ -27,16 +27,23 @@ export function TabProvider({ children }) {
   // depth 5 메뉴 클릭 → 탭 추가 or 기존 탭 활성화
   // headerMenuId: 현재 활성 헤더(depth 3)의 id (LeftMenu에서 전달)
   const addTab = (menu, headerMenuId) => {
+
+    // 이미 열려있는 탭인지 확인
     const exists = tabs.find((t) => t.menuId === menu.id)
+
+    // 열려있으면 해당 탭 활성화 + 사이드바 동기화
     if (exists) {
       setActiveTabId(exists.id)
       onTabChangeCb?.(exists.headerMenuId)
       return
     }
+
+    // 최대 탭 수 제한
     if (tabs.length >= MAX_TABS) {
       alert(`탭은 최대 ${MAX_TABS}개까지 열 수 있습니다.`)
       return
     }
+
     const newTab = {
       id:            crypto.randomUUID(),
       menuId:        menu.id,
@@ -65,6 +72,8 @@ export function TabProvider({ children }) {
   const changeTab = (tabId) => {
     setActiveTabId(tabId)
     const tab = tabs.find((t) => t.id === tabId)
+
+    // 현재 활성화된 탭의 headerMenuId로 헤더 메뉴 동기화 콜백 호출
     onTabChangeCb?.(tab?.headerMenuId ?? null)
   }
 
