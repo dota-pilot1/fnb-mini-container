@@ -1,0 +1,185 @@
+react-hook-form 이해하기
+===========================================================
+이 프로젝트에서는 두 가지 패턴으로 사용된다.
+
+  패턴 A: 검색폼  (BrandPage + BrandSearchForm)
+  패턴 B: 상세폼  (BrandDetail - 단독 useForm)
+
+
+===========================================================
+패턴 A: 검색폼 패턴 (부모가 useForm, 자식에 register 전달)
+===========================================================
+
+구조:
+  BrandPage (부모)
+    - useForm 선언
+    - register, getValues 사용
+    - BrandSearchForm에 register, onSearch, onReset 전달
+
+  BrandSearchForm (자식)
+    - register를 props로 받아서 input에 spread
+    - form submit 없음, 버튼 클릭으로 onSearch/onReset 호출
+
+-----------------------------------------------------------
+// BrandPage.jsx (부모)
+const { register, reset: resetSearch, getValues } = useForm({
+  defaultValues: { brandCode: '', brandName: '', useYn: '', syncStatus: '' },
+})
+
+const handleSearch = () => {
+  const params = getValues()        // 현재 폼 값 전체를 객체로 꺼냄
+  // params = { brandCode: 'A001', brandName: '', useYn: 'Y', syncStatus: '' }
+}
+
+const handleReset = () => {
+  resetSearch()                     // 폼을 defaultValues로 초기화
+}
+
+<BrandSearchForm
+  register={register}               // register 함수 자체를 넘김
+  onSearch={handleSearch}
+  onReset={handleReset}
+/>
+
+-----------------------------------------------------------
+// BrandSearchForm.jsx (자식)
+export default function BrandSearchForm({ register, onSearch, onReset }) {
+  return (
+    <Input {...register('brandCode')} />      // spread로 연결
+    <select {...register('useYn')}></select>   // select도 동일
+    <Button onClick={onSearch}>조회</Button>
+    <Button onClick={onReset}>초기화</Button>
+  )
+}
+
+-----------------------------------------------------------
+왜 submit 없이 버튼 onClick으로 하나?
+
+  관리자 페이지 특성상 Enter 키 submit보다
+  명시적인 "조회" 버튼 클릭을 선호.
+  getValues()로 언제든 현재 값을 꺼낼 수 있기 때문에
+  handleSubmit 없이도 동작함.
+
+-----------------------------------------------------------
+register('fieldName') 이 반환하는 것:
+  {
+    name: 'brandCode',
+    ref: (el) => { ... },     // input DOM을 react-hook-form에 등록
+    onChange: (e) => { ... }, // 값 변경 감지
+    onBlur: (e) => { ... },   // blur 감지
+  }
+
+  {...register('brandCode')} 는 이 객체를 input에 spread.
+  즉 name, ref, onChange, onBlur 를 한 번에 input에 연결.
+
+
+===========================================================
+패턴 B: 상세폼 패턴 (컴포넌트 내부에서 useForm + handleSubmit)
+===========================================================
+
+구조:
+  BrandDetail (독립 컴포넌트)
+    - 자체 useForm 선언
+    - brand props가 바뀔 때마다 reset()으로 폼 값 갱신
+    - handleSubmit으로 유효성 검사 후 onSave 호출
+    - watch()로 특정 필드 값을 실시간으로 읽음
+
+-----------------------------------------------------------
+// BrandDetail.jsx
+const { register, handleSubmit, reset, watch } = useForm()
+
+// ① brand props 변경 시 폼 값 동기화
+useEffect(() => {
+  if (brand) {
+    reset(brand)         // brand 객체 전체를 폼에 세팅
+  } else if (isNew) {
+    reset({ brandCode: '', brandName: '', useYn: 'Y', ... })
+  }
+}, [brand, isNew, reset])
+
+// ② 특정 필드 실시간 감시
+const syncStatus = watch('syncStatus')   // 값이 바뀔 때마다 리렌더
+// -> syncStatus === 'FAILED' 일 때만 재시도 버튼 표시
+
+// ③ 저장 버튼 클릭
+<Button onClick={handleSubmit(onSubmit)}>저장</Button>
+//  handleSubmit이 유효성 검사 통과 시에만 onSubmit 호출
+
+// ④ onSubmit
+const onSubmit = (data) => {
+  onSave({ ...data, status: isNew ? 'C' : 'U' })
+}
+
+// ⑤ 유효성 검사 (required)
+<Input {...register('brandCode', { required: true })} />
+
+-----------------------------------------------------------
+useForm이 반환하는 주요 값:
+
+  register      - input 등록 함수 (name, ref, onChange, onBlur 반환)
+  handleSubmit  - 유효성 검사 후 submit 처리 함수
+  reset         - 폼 값 초기화/세팅
+  watch         - 특정 필드 실시간 구독
+  getValues     - 현재 폼 값 스냅샷 (렌더 유발 없음)
+  setValue      - 특정 필드 값 강제 세팅
+  formState     - { errors, isSubmitting, isDirty, ... }
+
+-----------------------------------------------------------
+watch vs getValues 차이:
+
+  watch('fieldName')
+    -> 값이 바뀔 때마다 리렌더 발생
+    -> 화면에 값을 표시하거나, 조건부 UI에 사용
+
+  getValues()
+    -> 리렌더 없이 현재 값만 꺼냄
+    -> 버튼 클릭 시점의 값을 가져올 때 사용 (검색 버튼 등)
+
+  이 프로젝트:
+    watch   -> BrandDetail에서 syncStatus 변화에 따라 재시도 버튼 표시
+    getValues -> BrandPage에서 조회 버튼 클릭 시 검색 파라미터 수집
+
+
+===========================================================
+두 패턴 비교
+===========================================================
+
+              패턴 A (검색폼)          패턴 B (상세폼)
+-----------   --------------------    --------------------
+useForm 위치  부모 (BrandPage)         자체 (BrandDetail)
+register 전달 props로 자식에게 전달     자체 사용
+submit 방식   버튼 onClick + getValues  handleSubmit(onSubmit)
+유효성 검사   없음                      register 옵션으로 설정
+폼 값 갱신    reset()으로 초기화만      useEffect + reset(data)
+
+
+===========================================================
+defaultValues를 쓰는 이유
+===========================================================
+
+  useForm({
+    defaultValues: { brandCode: '', brandName: '', useYn: '', syncStatus: '' }
+  })
+
+  1. 초기 렌더 시 input이 controlled 상태로 시작 (undefined -> '' 경고 방지)
+  2. reset() 호출 시 이 값으로 돌아감
+  3. getValues() 시 undefined 없이 깔끔한 객체 반환
+
+
+===========================================================
+이 프로젝트 전체 흐름 정리
+===========================================================
+
+[검색 흐름]
+  BrandPage
+    useForm (register, getValues, reset)
+      -> BrandSearchForm에 register 전달
+      -> 조회 버튼 클릭 -> getValues() -> API 호출
+      -> 초기화 버튼 클릭 -> reset()
+
+[저장 흐름]
+  BrandDetail
+    useForm (register, handleSubmit, reset, watch)
+      -> brand props 변경 -> useEffect -> reset(brand)
+      -> 저장 버튼 클릭 -> handleSubmit -> onSubmit -> onSave(data)
+      -> 부모(BrandPage)의 handleSave 실행 -> API 호출

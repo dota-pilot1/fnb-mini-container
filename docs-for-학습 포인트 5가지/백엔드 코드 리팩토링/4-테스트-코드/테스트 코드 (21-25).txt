@@ -1,0 +1,91 @@
+================================================================
+실무 백엔드(Spring Boot + MyBatis) 이해를 위한 핵심 30가지
+================================================================
+
+================================================================
+테스트 코드 (21~25)
+================================================================
+
+21. JUnit5 + Spring Boot 테스트 기본 구조
+----------------------------------------------------------------
+  - @SpringBootTest       : 전체 ApplicationContext 로드 (통합 테스트)
+  - @WebMvcTest           : Controller 레이어만 로드
+  - @DataJpaTest          : DB 레이어만 로드
+  - @ExtendWith(SpringExtension.class): JUnit5와 Spring 연동
+  - @MockitoBean          : Spring 컨텍스트의 특정 빈을 Mock으로 교체
+    (현업 프로젝트 FnbMiniApplicationTests에서 직접 사용)
+
+  핵심 질문:
+    "@SpringBootTest와 @WebMvcTest의 차이와 각각 언제 쓰는가?"
+
+
+22. Mockito — 단위 테스트의 핵심
+----------------------------------------------------------------
+  - @Mock        : 순수 Mock 객체 (Spring 컨텍스트 없이)
+  - @InjectMocks : Mock을 주입받는 테스트 대상 객체
+  - when(...).thenReturn(...) : 메서드 반환값 지정
+  - verify(...)  : 특정 메서드가 호출됐는지 검증
+  - @Spy         : 실제 객체이지만 일부 메서드만 Mock 처리
+
+  핵심 질문:
+    "@Mock과 @MockitoBean의 차이는?"
+
+
+23. 동시성 테스트 (CountDownLatch + ExecutorService)
+----------------------------------------------------------------
+  - 동시성 문제를 코드로 재현하는 핵심 도구
+  - CountDownLatch: 여러 스레드가 동시에 시작하도록 대기
+  - ExecutorService: 스레드 풀로 병렬 실행
+
+  예시:
+    int threadCount = 10;
+    ExecutorService executor = Executors.newFixedThreadPool(threadCount);
+    CountDownLatch latch = new CountDownLatch(threadCount);
+
+    for (int i = 0; i < threadCount; i++) {
+        executor.submit(() -> {
+            latch.countDown();
+            latch.await();      // 모두 준비될 때까지 대기
+            settlementService.settle(dto);  // 동시 실행
+        });
+    }
+
+  - SELECT FOR UPDATE 적용 전후를 이 테스트로 비교 검증
+  - 현업 정산 동시성 문제를 이 방법으로 증명 가능
+
+  핵심 질문:
+    "CountDownLatch 없이 그냥 스레드를 여러 개 띄우면 진짜 동시에 실행되지 않는 이유는?"
+
+
+24. 통합 테스트 vs 단위 테스트 전략
+----------------------------------------------------------------
+  - 단위 테스트: Service/Mapper 각각 격리해서 빠르게 검증
+      → Mock으로 DB 없이 실행
+  - 통합 테스트: 실제 DB와 연동해서 전체 흐름 검증
+      → @SpringBootTest + 실제 DB (또는 Testcontainers)
+  - 테스트 피라미드: 단위 > 통합 > E2E 순으로 비중 유지
+  - 현업 SI에서는 통합 테스트도 드물지만,
+    동시성 문제 검증은 통합 테스트로만 가능
+
+  핵심 질문:
+    "단위 테스트만으로 동시성 문제를 검증할 수 없는 이유는?"
+
+
+25. Testcontainers — 테스트용 DB 자동 관리
+----------------------------------------------------------------
+  - 테스트 실행 시 Docker로 PostgreSQL 컨테이너를 자동으로 띄우고 종료
+  - 실제 DB와 동일한 환경에서 테스트 가능
+  - CI/CD 파이프라인에서 DB 없이도 통합 테스트 실행 가능
+  - 의존성: org.testcontainers:postgresql
+
+  예시:
+    @Container
+    static PostgreSQLContainer<?> postgres =
+        new PostgreSQLContainer<>("postgres:15");
+
+  - 현재 미니 프로젝트에서 mvn test 시 DB 없이 실패하는 문제의 근본 해결책
+
+  핵심 질문:
+    "@MockitoBean으로 Mapper를 목 처리하는 것과 Testcontainers의 차이는?"
+
+================================================================
