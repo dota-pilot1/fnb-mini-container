@@ -1,0 +1,276 @@
+============================================================
+아웃박스 패턴 (Outbox Pattern) — Q&A
+============================================================
+
+
+Q1. 기존 방식의 문제가 뭔데?
+============================================================
+
+일반적인 흐름:
+
+  1. DB 저장 (INSERT/UPDATE)
+  2. 외부 API 호출
+  3. 성공/실패 이력 기록
+
+이게 왜 문제?
+
+  - DB는 커밋됐는데 API가 실패하면? → 데이터 불일치
+  - API는 성공했는데 DB가 롤백되면? → 데이터 불일치
+  - 네트워크 장애로 응답을 못 받으면? → 성공인지 실패인지 모름
+  - 재시도하면 중복 호출 위험
+
+핵심 문제:
+  DB 트랜잭션(ACID 보장)과 외부 API 호출(ACID 아님)을
+  하나의 원자적 작업으로 묶을 수 없다.
+
+
+Q2. 트랜잭션 밖으로 빼면 되는 거 아냐?
+============================================================
+
+맞다. 1차적인 개선이 이거다:
+
+  1차 TX: DB 저장 → 커밋 → 커넥션 반환
+  NO TX:  외부 API 호출 (커넥션 점유 안 함)
+  2차 TX: 결과 반영 + 이력 저장
+
+이게 우리 프로젝트(브랜드 관리, 정산)에서 한 "트랜잭션 3분할"이다.
+
+하지만 여전히 남는 문제:
+  - 1차 TX 커밋 후, 서버가 죽으면? → API 호출 자체가 안 됨
+  - API 호출 중 서버가 죽으면? → 결과 반영이 안 됨
+  - "API를 호출해야 한다"는 사실 자체가 유실됨
+
+
+Q3. 그래서 아웃박스 패턴이 뭔데?
+============================================================
+
+핵심 아이디어:
+
+  "외부 API를 바로 호출하지 않는다"
+  "API를 호출해야 한다는 사실만 DB에 기록한다"
+  "별도 프로세스가 나중에 실제 호출한다"
+
+흐름:
+
+  ┌─────────────────────────────────────────────┐
+  │ 하나의 트랜잭션                                │
+  │                                               │
+  │  1. 업무 테이블 저장 (INSERT/UPDATE)            │
+  │  2. outbox 테이블에 "요청 필요" 레코드 저장      │
+  │                                               │
+  │  → 같이 커밋됨 (원자성 보장)                     │
+  └─────────────────────────────────────────────┘
+
+  ┌─────────────────────────────────────────────┐
+  │ 별도 프로세스 (스케줄러 / 워커)                  │
+  │                                               │
+  │  1. outbox에서 PENDING 레코드 조회               │
+  │  2. 외부 API 호출                               │
+  │  3. 성공 → status = SUCCESS                     │
+  │  4. 실패 → retry_count 증가, 나중에 재시도       │
+  └─────────────────────────────────────────────┘
+
+왜 이게 안전한가?
+  - 업무 데이터와 "요청 필요" 기록이 같은 TX → 둘 다 성공하거나 둘 다 실패
+  - 서버가 죽어도 outbox에 PENDING 레코드가 남아 있음 → 재기동 후 처리
+  - "요청해야 한다"는 사실이 절대 유실되지 않음
+
+
+Q4. 코드로 보면 어떻게 생겼어?
+============================================================
+
+■ 테이블 구조
+
+  -- 업무 테이블 (예: 정산)
+  CREATE TABLE settlement (
+      id          BIGSERIAL PRIMARY KEY,
+      shop_id     BIGINT NOT NULL,
+      sales_date  DATE NOT NULL,
+      total_amt   BIGINT,
+      status      VARCHAR(20) DEFAULT 'CREATED'
+  );
+
+  -- 아웃박스 테이블
+  CREATE TABLE outbox (
+      id              BIGSERIAL PRIMARY KEY,
+      aggregate_type  VARCHAR(50) NOT NULL,   -- 'SETTLEMENT'
+      aggregate_id    BIGINT NOT NULL,         -- settlement.id
+      event_type      VARCHAR(50) NOT NULL,    -- 'SAP_SYNC'
+      payload         TEXT NOT NULL,            -- JSON 요청 본문
+      status          VARCHAR(20) DEFAULT 'PENDING',  -- PENDING / SUCCESS / FAILED
+      retry_count     INT DEFAULT 0,
+      created_at      TIMESTAMP DEFAULT NOW(),
+      processed_at    TIMESTAMP
+  );
+
+
+■ 서비스 코드 (Spring)
+
+  @Service
+  public class SettlementService {
+
+      // ★ 하나의 트랜잭션으로 업무 데이터 + outbox 동시 저장
+      @Transactional
+      public Settlement createSettlement(SettlementReqDto req) {
+          // 1. 업무 데이터 저장
+          Settlement settlement = new Settlement();
+          settlement.setShopId(req.getShopId());
+          settlement.setSalesDate(req.getSalesDate());
+          settlement.setTotalAmt(req.getTotalAmt());
+          settlement.setStatus("CREATED");
+          settlementMapper.insert(settlement);
+
+          // 2. outbox에 "SAP에 보내야 함" 기록
+          Outbox outbox = new Outbox();
+          outbox.setAggregateType("SETTLEMENT");
+          outbox.setAggregateId(settlement.getId());
+          outbox.setEventType("SAP_SYNC");
+          outbox.setPayload(toJson(settlement));  // JSON 직렬화
+          outbox.setStatus("PENDING");
+          outboxMapper.insert(outbox);
+
+          // ★ 여기서 외부 API를 호출하지 않는다!
+          return settlement;
+      }
+  }
+
+
+■ 워커 (스케줄러)
+
+  @Component
+  public class OutboxProcessor {
+
+      // 5초마다 실행
+      @Scheduled(fixedDelay = 5000)
+      public void processOutbox() {
+          List<Outbox> pendings = outboxMapper.selectPending();
+
+          for (Outbox outbox : pendings) {
+              try {
+                  // 외부 API 호출
+                  String response = restClient.post()
+                      .uri("/api/settlements/sync")
+                      .body(outbox.getPayload())
+                      .retrieve()
+                      .body(String.class);
+
+                  // 성공
+                  outboxMapper.updateStatus(outbox.getId(), "SUCCESS", response);
+
+              } catch (Exception e) {
+                  // 실패 → 재시도 카운트 증가
+                  outboxMapper.incrementRetry(outbox.getId(), e.getMessage());
+
+                  // 최대 재시도 초과 시 DEAD_LETTER로 이동
+                  if (outbox.getRetryCount() >= 5) {
+                      outboxMapper.updateStatus(outbox.getId(), "DEAD_LETTER", null);
+                  }
+              }
+          }
+      }
+  }
+
+
+Q5. 우리 프로젝트랑 비교하면?
+============================================================
+
+현재 우리 프로젝트 (트랜잭션 3분할 방식):
+
+  사용자 요청 → [1차TX: DB저장] → [API 호출] → [2차TX: 결과 저장]
+                                    ↑
+                              여기서 바로 호출
+
+아웃박스 패턴으로 바꾸면:
+
+  사용자 요청 → [TX: DB저장 + outbox 기록] → 응답 즉시 반환
+                                                (API 안 부름)
+
+  별도 워커  → [outbox 읽기] → [API 호출] → [결과 업데이트]
+                                  ↑
+                            나중에 호출
+
+차이점:
+
+  ┌──────────────┬─────────────────────┬──────────────────────┐
+  │              │ 트랜잭션 3분할       │ 아웃박스 패턴          │
+  ├──────────────┼─────────────────────┼──────────────────────┤
+  │ API 호출 시점 │ 요청 즉시            │ 나중에 (워커가)        │
+  │ 사용자 응답   │ API 끝나야 응답      │ DB 저장만 하고 즉시    │
+  │ 서버 죽으면   │ 요청 유실 가능       │ outbox에 남아있음      │
+  │ 복잡도       │ 낮음                 │ 높음 (워커 필요)       │
+  │ 응답 속도    │ 느림 (API 대기)       │ 빠름 (DB만)           │
+  │ 정합성       │ 보통                 │ 높음 (이벤트 유실 없음) │
+  └──────────────┴─────────────────────┴──────────────────────┘
+
+
+Q6. 아웃박스 패턴의 단점은?
+============================================================
+
+■ 즉시 결과를 못 줌
+  사용자에게 "처리 완료"가 아니라 "접수됨"으로 응답해야 한다.
+  결과는 나중에 폴링이나 웹소켓으로 알려줘야 함.
+
+■ 복잡도 증가
+  워커(스케줄러) 프로세스가 필요하다.
+  outbox 테이블 관리, 재시도 로직, 데드레터 처리 등.
+
+■ 지연 발생
+  스케줄러 주기만큼 지연이 생긴다.
+  (5초 주기면 최대 5초 대기)
+
+■ 중복 처리 가능성
+  워커가 API 호출 후 상태 업데이트 전에 죽으면
+  다음 실행 때 같은 요청을 또 보낼 수 있다.
+  → 수신측에서 멱등성 보장 필요
+
+
+Q7. 그럼 언제 쓰는 게 맞아?
+============================================================
+
+아웃박스가 적합한 경우:
+  - MSA (마이크로서비스) 간 이벤트 전달
+  - 외부 API 장애가 잦고 재시도가 중요한 경우
+  - 데이터 유실이 절대 안 되는 경우 (결제, 정산)
+  - 응답 속도보다 정합성이 더 중요한 경우
+
+트랜잭션 3분할이 적합한 경우:
+  - 모놀리식 서버에서 간단하게 처리
+  - 즉시 결과를 사용자에게 보여줘야 할 때
+  - 외부 API가 안정적이고 빠른 경우
+  - 구현 복잡도를 낮추고 싶을 때
+
+우리 프로젝트는 연습용 모놀리식이므로 트랜잭션 3분할이 적절.
+실무에서 MSA로 전환하거나 장애 대응이 중요해지면 아웃박스 도입 검토.
+
+
+Q8. MSA에서 Kafka랑 합치면?
+============================================================
+
+아웃박스 + Kafka 조합 (CDC 방식):
+
+  1. 업무 데이터 + outbox를 같은 TX로 저장
+  2. Debezium(CDC 도구)이 outbox 테이블 변경을 감지
+  3. 자동으로 Kafka 토픽에 이벤트 발행
+  4. 다른 서비스가 Kafka에서 이벤트를 읽어서 처리
+
+  서비스A                    Kafka                서비스B
+  ┌──────┐   CDC(Debezium)   ┌──────┐   consume   ┌──────┐
+  │  TX  │ → outbox 감지 →   │ Topic│ ────────→   │ 처리  │
+  │ save │                   └──────┘              └──────┘
+  └──────┘
+
+이렇게 하면 스케줄러(폴링)도 필요 없고,
+변경 즉시 이벤트가 발행되어 지연도 최소화.
+
+하지만 Kafka + Debezium 인프라가 필요하므로
+단순 프로젝트에서는 오버킬.
+
+
+Q9. 한 줄 요약
+============================================================
+
+외부 API를 트랜잭션 안에서 호출하지 말고,
+"요청 이벤트"를 DB에 기록하고,
+별도 프로세스가 처리하게 만드는 것 = 아웃박스 패턴
+
+핵심: "요청해야 한다는 사실"이 절대 유실되지 않는다.
