@@ -1,0 +1,213 @@
+실무 화면 출력 흐름
+==============================================
+
+Recoil에 저장된 메뉴 데이터를
+Header(Level 3) → LeftMenu(Level 4/5) → MdiTab(열린 탭) 으로 표시
+
+==============================================
+1. 화면 구조
+==============================================
+
+  ┌─────────────────────────────────────────────────┐
+  │ Header (Level 3)                                │
+  │ [브랜드 관리] [메뉴 관리] [정산 관리]     사용자│
+  ├────────┬────────────────────────────────────────┤
+  │        │ MdiTab (열린 탭)                        │
+  │ Left   │ [브랜드 조회 ×] [브랜드 등록 ×]         │
+  │ Menu   ├────────────────────────────────────────┤
+  │        │ Content (현재 탭 페이지)                │
+  │ 브랜드 │                                        │
+  │ 등록   │ <BrandRtrv /> ← 현재 활성 탭 컴포넌트  │
+  │ ─조회  │                                        │
+  │ ─등록  │                                        │
+  │        │                                        │
+  └────────┴────────────────────────────────────────┘
+
+==============================================
+2. Recoil 상태 3가지
+==============================================
+
+  fwMenuState          → Level 3 배열 (헤더 렌더링용)
+  fwLeftMenuState      → 현재 선택된 Level 3의 subMenus (사이드바용)
+  tabStore             → 열린 탭 배열
+  currentTabIndexStore → 현재 활성 탭 인덱스
+
+==============================================
+3. Header 렌더링 (Level 3)
+==============================================
+
+  파일: Header.jsx
+
+  const menuList = useRecoilValue(fwMenuState)  // Level 3 배열
+  const setLeftMenus = useSetRecoilState(fwLeftMenuState)
+
+  const handleActive = (menu) => {
+    // 클릭한 헤더의 subMenus를 사이드바로 세팅
+    setLeftMenus(menu.subMenus || [])
+  }
+
+  return (
+    <nav>
+      {menuList.map(menu => (
+        <button key={menu.no} onClick={() => handleActive(menu)}>
+          {menu.name}
+        </button>
+      ))}
+    </nav>
+  )
+
+  동작:
+    "브랜드 관리" 클릭
+      → handleActive(브랜드 관리 객체)
+      → fwLeftMenuState = 브랜드 관리.subMenus
+      → LeftMenu 리렌더링
+
+==============================================
+4. LeftMenu 렌더링 (Level 4 + Level 5)
+==============================================
+
+  파일: LeftMenu.jsx
+
+  const leftMenus = useRecoilValue(fwLeftMenuState)  // Level 4 배열
+
+  return (
+    <aside>
+      {leftMenus.map(category => (
+        <div key={category.no}>
+          <h3>{category.name}</h3>           {/* Level 4 */}
+          <ul>
+            {(category.subMenus || []).map(item => (
+              <li key={item.no}>
+                <button onClick={() => handleAddTab(item)}>
+                  {item.name}                 {/* Level 5 */}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ))}
+    </aside>
+  )
+
+  출력 예시:
+    브랜드 등록                ← Level 4
+      ─ 브랜드 조회             ← Level 5 (클릭 가능)
+      ─ 브랜드 등록             ← Level 5 (클릭 가능)
+
+==============================================
+5. 메뉴 클릭 → 탭 추가
+==============================================
+
+  파일: use-fw-tab.js (커스텀 훅)
+
+  const handleAddTab = (menu) => {
+    const [tabs, setTabs] = useRecoilState(tabStore)
+
+    // 중복 확인
+    const exists = tabs.find(t => t.id === menu.no)
+    if (exists) {
+      setActiveIndex(tabs.indexOf(exists))
+      return
+    }
+
+    // 최대 12개 제한
+    if (tabs.length >= 12) {
+      alert('탭은 최대 12개까지 열 수 있습니다.')
+      return
+    }
+
+    // 탭 추가
+    const newTab = {
+      id: menu.no,
+      name: menu.name,
+      component: menu.component  // "pages/cps/.../BrandRtrv"
+    }
+    setTabs([...tabs, newTab])
+    setActiveIndex(tabs.length)
+  }
+
+  동작:
+    "브랜드 조회" 클릭
+      → handleAddTab(브랜드 조회 객체)
+      → tabs 배열에 추가
+      → MdiTab 리렌더링
+
+==============================================
+6. MdiTab 렌더링 (열린 탭 목록)
+==============================================
+
+  파일: MdiTab.jsx
+
+  const tabs = useRecoilValue(tabStore)
+  const [activeIndex, setActiveIndex] = useRecoilState(currentTabIndexStore)
+
+  return (
+    <div className="tab-bar">
+      {tabs.map((tab, idx) => (
+        <div key={tab.id} className={idx === activeIndex ? 'active' : ''}>
+          <button onClick={() => setActiveIndex(idx)}>
+            {tab.name}
+          </button>
+          <button onClick={() => handleCloseTab(idx)}>×</button>
+        </div>
+      ))}
+    </div>
+  )
+
+  출력 예시:
+    [브랜드 조회 ×] [브랜드 등록 ×]
+
+==============================================
+7. 컴포넌트 렌더링 (Content 영역)
+==============================================
+
+  파일: ContentsPage.jsx
+
+  const tabs = useRecoilValue(tabStore)
+  const activeIndex = useRecoilValue(currentTabIndexStore)
+  const activeTab = tabs[activeIndex]
+
+  // 동적 import
+  const Component = activeTab
+    ? lazy(() => import(`./${activeTab.component}.jsx`))
+    : null
+
+  return (
+    <main>
+      <Suspense fallback={<div>로딩 중...</div>}>
+        {Component && <Component />}
+      </Suspense>
+    </main>
+  )
+
+  동작:
+    activeTab.component = "pages/cps/base/brandmng/BrandRtrv"
+      → import(`./pages/cps/base/brandmng/BrandRtrv.jsx`)
+      → <BrandRtrv /> 렌더링
+
+==============================================
+8. 전체 흐름 정리
+==============================================
+
+  [사용자 동작]
+    1. Header "브랜드 관리" 클릭
+       → fwLeftMenuState 갱신
+       → LeftMenu에 "브랜드 등록" 카테고리 표시
+
+    2. LeftMenu "브랜드 조회" 클릭
+       → handleAddTab
+       → tabs 배열 추가
+       → MdiTab에 탭 표시
+
+    3. 탭 자동으로 활성화
+       → activeIndex 갱신
+       → ContentsPage에서 컴포넌트 동적 import
+       → <BrandRtrv /> 렌더링
+
+  [상태 흐름]
+    Recoil fwMenuState (Level 3)
+      → Header 클릭
+      → Recoil fwLeftMenuState (Level 4/5)
+      → LeftMenu 클릭
+      → Recoil tabStore + currentTabIndexStore
+      → ContentsPage 렌더링

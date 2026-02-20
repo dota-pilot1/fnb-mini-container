@@ -1,0 +1,199 @@
+함수형 프로그래밍 핵심 20가지
+기초 개념 (1-5)
+불변성 (Immutability)
+원본 데이터 변경 금지
+새 객체 생성 반환
+순수 함수 (Pure Function)
+같은 입력 → 같은 출력
+부수 효과 없음
+일급 함수 (First-class Function)
+함수를 변수에 할당
+함수를 인자로 전달
+함수를 반환값으로
+고차 함수 (Higher-order Function)
+함수를 받거나 반환하는 함수
+map, filter, reduce
+함수 합성 (Function Composition)
+작은 함수들을 조합
+f(g(x)) 형태
+JavaScript/React (6-10)
+Array 메서드
+map, filter, reduce, find, some, every
+flatMap, forEach
+Optional Chaining & Nullish Coalescing
+?. 안전한 접근
+?? 기본값 설정
+Spread & Destructuring
+... 펼치기
+구조 분해 할당
+클로저 (Closure)
+함수가 외부 변수 기억
+상태 은닉
+커링 (Currying)
+함수의 부분 적용
+f(a, b) → f(a)(b)
+Java Stream API (11-15)
+Stream 생성 & 중간 연산
+stream(), filter(), map()
+sorted(), distinct(), peek()
+최종 연산
+collect(), forEach(), count()
+findFirst(), anyMatch()
+Collectors
+toList(), toSet(), toMap()
+groupingBy(), joining()
+Optional
+orElse(), orElseGet(), orElseThrow()
+map(), flatMap(), filter()
+메서드 레퍼런스
+:: 문법
+4가지 타입 (정적, 인스턴스, 생성자, 특정 객체)
+고급 개념 (16-20)
+Lazy Evaluation (지연 평가)
+필요할 때만 계산
+Stream은 최종 연산까지 지연
+Monad 패턴
+Optional, Stream의 기본 원리
+flatMap의 의미
+함수형 에러 처리
+try-catch 대신 Optional/Either
+선언적 에러 처리
+Recursion (재귀)
+반복문 대신 재귀
+꼬리 재귀 최적화
+함수형 상태 관리
+React의 불변 상태 업데이트
+Reducer 패턴
+학습 순서 추천
+1주차: 기초 (1-5) + JavaScript (6-8)
+2주차: JavaScript 고급 (9-10) + Java Stream (11-13)
+3주차: Java 고급 (14-15) + 고급 개념 (16-17)
+4주차: 실전 적용 (18-20) + 프로젝트
+실습 프로젝트 추천
+🛒 쇼핑몰 (추천 ⭐⭐⭐⭐⭐)
+장점:
+✅ 함수형 연습 많음
+상품 필터링 (filter, map)
+장바구니 계산 (reduce)
+카테고리 트리 (재귀)
+검색/정렬 (고차 함수)
+✅ 현실적인 비즈니스 로직
+가격 계산 (할인, 쿠폰)
+재고 관리
+주문 처리
+✅ 상태 관리 연습
+장바구니 (불변 업데이트)
+필터 조건 (조합)
+함수형 연습 예시:
+// 상품 필터링
+const filteredProducts = products
+  .filter(p => p.category === selectedCategory)
+  .filter(p => p.price >= minPrice && p.price <= maxPrice)
+  .filter(p => p.inStock)
+  .sort((a, b) => a.price - b.price)
+
+// 장바구니 총액
+const total = cart.reduce((sum, item) => 
+  sum + (item.price * item.quantity), 0
+)
+
+// 카테고리 트리
+function buildCategoryTree(categories, parentId = null) {
+  return categories
+    .filter(c => c.parentId === parentId)
+    .map(c => ({
+      ...c,
+      children: buildCategoryTree(categories, c.id)
+    }))
+}
+💬 메신저 (추천 ⭐⭐⭐)
+장점:
+✅ 실시간 상태 관리
+✅ 리스트 조작 많음
+단점:
+⚠️ WebSocket/실시간 처리에 집중
+⚠️ 함수형보다 비동기 처리가 중심
+함수형 연습 예시:
+// 메시지 필터링
+const unreadMessages = messages.filter(m => !m.isRead)
+
+// 채팅방 그룹핑
+const groupedByDate = messages.reduce((acc, msg) => {
+  const date = formatDate(msg.timestamp)
+  return {
+    ...acc,
+    [date]: [...(acc[date] || []), msg]
+  }
+}, {})
+최종 추천: 쇼핑몰 🛒
+이유:
+함수형 연습 최적
+filter, map, reduce 실전 활용
+복잡한 계산 로직 (가격, 할인)
+트리 구조 (카테고리)
+포트폴리오 가치
+비즈니스 로직 이해
+실무 유사도 높음
+단계적 확장 가능
+Phase 1: 상품 목록 + 필터링
+Phase 2: 장바구니 + 계산
+Phase 3: 주문 + 결제
+Phase 4: 관리자 (메뉴 관리 응용!)
+쇼핑몰 함수형 연습 포인트
+// 1. 상품 필터/정렬 체인
+products
+  .filter(p => p.category === 'electronics')
+  .filter(p => p.price < 100000)
+  .map(p => ({ ...p, discount: p.price * 0.1 }))
+  .sort((a, b) => b.rating - a.rating)
+
+// 2. 장바구니 불변 업데이트
+const addToCart = (cart, product) => [
+  ...cart,
+  { ...product, quantity: 1 }
+]
+
+const updateQuantity = (cart, productId, quantity) =>
+  cart.map(item =>
+    item.id === productId
+      ? { ...item, quantity }
+      : item
+  )
+
+// 3. 가격 계산 (reduce)
+const calculateTotal = (items) =>
+  items.reduce((total, item) => 
+    total + (item.price * item.quantity), 0
+  )
+
+// 4. 쿠폰 적용 (함수 합성)
+const applyDiscount = (price) => (discount) => 
+  price * (1 - discount)
+
+const finalPrice = applyDiscount(10000)(0.2)  // 8000
+
+// 5. 카테고리 트리 (재귀)
+const buildTree = (categories, parentId = null) =>
+  categories
+    .filter(c => c.parentId === parentId)
+    .map(c => ({
+      ...c,
+      children: buildTree(categories, c.id)
+    }))
+학습 로드맵
+1주: 기본 개념 학습
+   → docs-for-함수형 문법 (이미 있음!)
+
+2주: 쇼핑몰 Phase 1
+   → 상품 목록, 필터링, 정렬
+
+3주: 쇼핑몰 Phase 2
+   → 장바구니, 가격 계산
+
+4주: 쇼핑몰 Phase 3
+   → 주문, 결제, 카테고리 트리
+결론:
+학습: 20가지 개념 (위 리스트)
+실습: 쇼핑몰 추천 🛒
+이유: 함수형 연습 최적 + 포트폴리오 가치
+시작하시겠어요? 😊

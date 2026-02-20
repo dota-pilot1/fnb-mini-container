@@ -1,0 +1,169 @@
+실무 메뉴 로드 흐름
+==============================================
+
+로그인 후 한 번만 메뉴 전체를 DB에서 가져와서
+localStorage → Recoil에 저장 → 이후 계속 재사용
+
+==============================================
+1. 전체 흐름 (타임라인)
+==============================================
+
+  [로그인 버튼 클릭]
+    ↓
+  Auth.jsx: POST /api/userInfo/v1.0 호출
+    ↓
+  UserInfoController.java: selectMenuList(userId) 실행
+    ↓
+  UserInfoService.java: DB 3번 호출해서 트리 조립
+    ↓ (Level 3 조회)
+    ↓ (각 Level 3마다 Level 4 조회)
+    ↓ (각 Level 4마다 Level 5 조회)
+    ↓
+  응답: menuList JSON (트리 구조)
+    ↓
+  Auth.jsx: localStorage.setItem('sessionMenuList', JSON.stringify(menuList))
+    ↓
+  App.jsx 마운트: localStorage에서 읽어서 Recoil fwMenuState에 세팅
+    ↓
+  Header / LeftMenu / MdiTab: Recoil 상태 구독 → 메뉴 렌더링
+
+==============================================
+2. 백엔드: DB 3번 호출 중첩 루프 (현재 방식)
+==============================================
+
+  파일: UserInfoService.java
+
+  public List<MenuDto> selectMenuList(String userId) {
+
+    // 1단계: Level 3 (헤더) 조회
+    param.put("progLvl", 3);
+    List<MenuDto> menuList = mapper.selectMenuList(param);
+
+    // 2단계: 각 Level 3마다 Level 4 (카테고리) 조회
+    for (MenuDto dto : menuList) {
+      param.put("progLvl", 4);
+      param.put("upProgNo", dto.getNo());  // 부모 번호
+      List<MenuDto> menuSubList = mapper.selectMenuList(param);
+      dto.setSubMenus(menuSubList);
+
+      // 3단계: 각 Level 4마다 Level 5 (실제 메뉴) 조회
+      for (MenuDto sub : menuSubList) {
+        param.put("progLvl", 5);
+        param.put("upProgNo", sub.getNo());
+        List<MenuDto> menuThirdList = mapper.selectMenuList(param);
+        sub.setSubMenus(menuThirdList);
+      }
+    }
+    return menuList;
+  }
+
+  DB 호출 횟수:
+    1회 (Level 3 전체) +
+    N회 (Level 3 개수만큼 Level 4 조회) +
+    N×M회 (Level 4 개수만큼 Level 5 조회)
+    = 최소 11회 이상 (Level 3이 10개면)
+
+==============================================
+3. 응답 JSON 구조
+==============================================
+
+  [
+    {
+      "no": "061200000000",
+      "name": "브랜드 관리",
+      "progLvl": 3,
+      "component": null,
+      "subMenus": [
+        {
+          "no": "061201000000",
+          "name": "브랜드 등록",
+          "progLvl": 4,
+          "component": null,
+          "subMenus": [
+            {
+              "no": "061201010000",
+              "name": "브랜드 조회",
+              "progLvl": 5,
+              "component": "pages/cps/base/brandmng/BrandRtrv",
+              "subMenus": null
+            }
+          ]
+        }
+      ]
+    }
+  ]
+
+  핵심:
+    - Level 3/4는 component = null (렌더링 안 함)
+    - Level 5만 component 있음 (실제 페이지)
+    - subMenus가 재귀 구조
+
+==============================================
+4. 프론트: localStorage 저장
+==============================================
+
+  파일: Auth.jsx
+
+  const handleLogin = async () => {
+    const response = await axios.post('/api/userInfo/v1.0', { userId })
+
+    // 1. 메뉴 데이터를 localStorage에 저장
+    localStorage.setItem('sessionMenuList', JSON.stringify(response.data.menuList))
+
+    // 2. 권한 데이터도 저장
+    localStorage.setItem('sessionAuthList', JSON.stringify(response.data.authList))
+
+    // 3. /main 으로 이동
+    navigate('/main')
+  }
+
+==============================================
+5. 프론트: Recoil 세팅
+==============================================
+
+  파일: App.jsx
+
+  import { useSetRecoilState } from 'recoil'
+  import { fwMenuState } from '@/store/menu-atom'
+
+  function App() {
+    const setMenuState = useSetRecoilState(fwMenuState)
+
+    useEffect(() => {
+      // localStorage에서 메뉴 읽어서 Recoil에 세팅
+      const menuList = JSON.parse(localStorage.getItem('sessionMenuList') || '[]')
+      setMenuState(menuList)
+    }, [])
+
+    return <Router>...</Router>
+  }
+
+==============================================
+6. 프론트: Header / LeftMenu에서 소비
+==============================================
+
+  Header.jsx:
+    const menuList = useRecoilValue(fwMenuState)  // Level 3 배열
+    → menuList.map(menu => <button>{menu.name}</button>)
+
+  LeftMenu.jsx:
+    const leftMenus = useRecoilValue(fwLeftMenuState)  // 현재 선택된 Level 3의 subMenus
+    → leftMenus.map(category => category.subMenus.map(...))
+
+==============================================
+7. 한 번 로드 후 계속 재사용
+==============================================
+
+  로그인 후:
+    POST /api/userInfo/v1.0 → menuList 수신
+    → localStorage 저장
+    → Recoil 세팅
+    → 이후 메뉴 API 호출 없음
+
+  새로고침 시:
+    localStorage에서 읽어서 Recoil 복원
+    → API 재호출 없음
+
+  로그아웃 시:
+    localStorage.clear()
+    → 다음 로그인 시 다시 API 호출

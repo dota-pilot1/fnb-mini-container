@@ -19,7 +19,10 @@ export default function LeftMenu() {
 
   // depth 4 카테고리 토글
   const toggleCategory = (id) => {
-    setOpenCategories((prev) => ({ ...prev, [id]: !prev[id] }))
+    setOpenCategories((prev) => ({
+      ...prev,
+      [id]: !(prev[id] ?? true), // undefined도 true로 간주하여 반전
+    }))
   }
 
   // 현재 활성 탭의 menuId
@@ -28,8 +31,9 @@ export default function LeftMenu() {
   return (
     <nav className="left-menu">
       <ul className="left-menu-list">
+        {/* 각 메뉴를 카테고리라 가정하고 하위 메뉴들을 재귀적으로 렌더링 */}
         {leftMenus.map((category) => {
-          const isOpen = openCategories[category.id] !== false // 기본 펼침
+          const isOpen = openCategories[category.id] ?? true // 기본 펼침 (undefined → true)
           return (
             <li key={category.id} className="left-menu-category">
               {/* depth 4: 카테고리 헤더 */}
